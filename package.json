@@ -1,0 +1,175 @@
+{
+  "name": "tangent",
+  "author": "astosia",
+  "version": "1.6.0",
+  "keywords": [
+    "pebble",
+    "watchface",
+    "nomos",
+    "tangente",
+    "color",
+    "colorful",
+    "shadow",
+    "analog"
+  ],
+  "private": true,
+  "dependencies": {
+    "@rebble/clay": "^1.0.6",
+    "pebble-fctx": "^1.6.5",
+    "pebble-fctx-compiler": "^1.2.2"
+  },
+  "pebble": {
+    "displayName": "tangent",
+    "uuid": "9c40a779-9f1f-41d7-94f0-c237cffcad2d",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "capabilities": [
+      "configurable"
+    ],
+    "messageKeys": [
+      "EnableSecondsHand",
+      "DateFormat",
+      "PosLeft",
+      "PosTop",
+      "PosRight",
+      "PosBottom",
+      "MinuteHandThickness",
+      "HourHandThickness",
+      "MinuteCentreSize",
+      "HourCentreSize",
+      "DigitalHour",
+      "BackSize",
+      "BackLen",
+      "InnerCentreSize",
+      "RemoveZero24h",
+      "AddZero12h",
+      "showlocalAMPM",
+      "SecondsVisibleTime",
+      "showMinorTick",
+      "showMajorTick",
+      "EnableDate",
+      "EnableMonth",
+      "EnableBattery",
+      "EnableBatteryLine",
+      "EnableLogo",
+      "LogoText",
+      "BackgroundColor1",
+      "MinuteHandShadowColor",
+      "BWMinuteHandShadowColor",
+      "MajorTickColor",
+      "TextColor1",
+      "MinorTickColor",
+      "TextColor3",
+      "DateColor",
+      "BTQTColor",
+      "ShadowOn",
+      "HourDigitsColor",
+      "HoursHandBorderColor",
+      "MinutesHandColor",
+      "MonthHandColor",
+      "BWMonthHandColor",
+      "MinutesHandBorderColor",
+      "SecondsHandColor",
+      "BWSecondsHandColor",
+      "BatteryLineColor",
+      "BWBackgroundColor1",
+      "BWMinorTickColor",
+      "BWMinHandBatLineColor",
+      "BWHourDigitsColor",
+      "BWMajorTickColor",
+      "BWDateColor",
+      "BWBTQTColor",
+      "BWThemeSelect",
+      "ThemeSelect",
+      "BWShadowOn",
+      "Font",
+      "VibeMode",
+      "ForegroundShape"
+    ],
+    "resources": {
+      "media": [
+        {
+          "file": "images/MenuIcon.png",
+          "type": "bitmap",
+          "name": "IMAGE_ICON",
+          "memoryFormat": "1Bit",
+          "menuIcon": true,
+          "targetPlatforms": [
+            "aplite",
+            "diorite",
+            "flint",
+            "basalt",
+            "chalk",
+            "emery",
+            "gabbro"
+          ]
+        },
+        {
+          "file": "fonts/Tangent-Regular.ttf",
+          "name": "FONT_DATE_18",
+          "targetPlatforms": [
+            "aplite"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/Tangent-Regular.ttf",
+          "name": "FONT_DATE_14",
+          "targetPlatforms": [
+            "aplite"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/Tangent-Regular.ttf",
+          "name": "FONT_DATE_16",
+          "targetPlatforms": [
+            "aplite"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/Tangent-Regular.ttf",
+          "name": "FONT_DATE_30",
+          "targetPlatforms": [
+            "aplite"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/dripicons-v2.ttf",
+          "characterRegex": "[z]",
+          "name": "FONT_DRIPICONS_16",
+          "targetPlatforms": null,
+          "type": "font"
+        },
+        {
+          "file": "data/Tangent.ffont",
+          "name": "FONT_DATE_FCTX",
+          "targetPlatforms": 
+          [ "aplite",
+            "diorite",
+            "flint",
+            "basalt",
+            "chalk",
+            "emery",
+            "gabbro"
+          ],
+          "type": "raw"
+        }
+      ]
+    }
+  }
+}
