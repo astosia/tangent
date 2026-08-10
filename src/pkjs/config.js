@@ -422,7 +422,7 @@ module.exports = [
         "defaultValue": 7,
         "description": "Default = 7 on PT2, 9 on PR2",
         "min": 1,
-        "max": 15,
+        "max": 11,
         "step": 1
       },
       {
@@ -433,7 +433,7 @@ module.exports = [
         "defaultValue": 9,
         "description": "Default = 9 on PT2, 11 on PR2",
         "min": 1,
-        "max": 15,
+        "max": 11,
         "step": 1
       },
       {
@@ -473,8 +473,8 @@ module.exports = [
         "label": "Hands End Length",
         "messageKey": "BackLen",
         "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT"],
-        "defaultValue": 28,
-        "description": "Default = 28",
+        "defaultValue": 0,
+        "description": "Default = 0",
         "min": 0,
         "max": 40,
         "step": 2
@@ -484,8 +484,8 @@ module.exports = [
         "label": "Hands End Length",
         "messageKey": "BackLen",
         "capabilities": ["NOT_PLATFORM_GABBRO", "NOT_PLATFORM_EMERY"],
-        "defaultValue": 22,
-        "description": "Default = 22",
+        "defaultValue": 0,
+        "description": "Default = 0",
         "min": 0,
         "max": 30,
         "step": 2

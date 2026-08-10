@@ -214,9 +214,9 @@ static const UIConfig config = {
 .hour_hand_p2y = 50,
 .min_hand_p2x = 12,
 .min_hand_p2y = 12,
-.second_hand_a = 22,
+.second_hand_a = 22 + 3+ 1,
 .second_hand_b = 0,
-.seconds_circle_radius = 24,
+.seconds_circle_radius = 24+3,
 .seconds_circle_centre_x = 100,
 .seconds_circle_centre_y = 163-2-8+1,
 .dial_digits_mask_a = {{{100-15,23},{39,7}}},
@@ -288,11 +288,11 @@ static const UIConfig config = {
 .hour_hand_p2y = 0,
 .min_hand_p2x = 0,
 .min_hand_p2y = 0,
-.second_hand_a = 28,
+.second_hand_a = 28 + 2,
 .second_hand_b = 0,
-.seconds_circle_radius = 30,
+.seconds_circle_radius = 30 + 1,
 .seconds_circle_centre_x = 130,
-.seconds_circle_centre_y = 189-6-6,
+.seconds_circle_centre_y = 189-6-6-1-1,
 .dial_digits_mask_a = {{{130-15,23-2},{39,7+2}}},
 .dial_digits_mask_b = {{{130-19,0},{39,27}}},
 .dial_digits_mask_c = {{{130-15,260-27},{31,27}}}
@@ -345,7 +345,7 @@ static const UIConfig config = {
 .min_hand_a = 22,
 .circle_radius_adj = 18,
 .tick_mask_radius_adj = 12,
-.hands_shadow = 2,
+.hands_shadow = 1,
 .QTIconXOffset2 = 42,
 .QTIconYOffset2 = 23,
 .BTIconXOffset2 = -29,
@@ -372,7 +372,7 @@ static const UIConfig config = {
 .hour_hand_p2y = 36,
 .min_hand_p2x = 8,
 .min_hand_p2y = 8,
-.second_hand_a = 16,
+.second_hand_a = 17,
 .second_hand_b = 0,
 .seconds_circle_radius = 18,
 .seconds_circle_centre_x = 72,
@@ -448,7 +448,7 @@ static const UIConfig config = {
 .min_hand_p2y = 0,
 .second_hand_a = 20,
 .second_hand_b = 0,
-.seconds_circle_radius = 22,
+.seconds_circle_radius = 21,
 .seconds_circle_centre_x = 90,
 .seconds_circle_centre_y = 128-2-5,
 .dial_digits_mask_a = {{{90-14,22},{36,7}}},
@@ -588,7 +588,7 @@ static void prv_save_settings(void) {
 
 // Set default settings
 static void prv_default_settings(void) {
-  settings.EnableSecondsHand = true;
+ settings.EnableSecondsHand = true;
   settings.SecondsVisibleTime = 135;
   settings.EnableDate = true;
   settings.EnableMonth = false;
@@ -643,11 +643,11 @@ static void prv_default_settings(void) {
 
 // Quiet time icon handler
 static void quiet_time_icon () {
-    #ifdef BACKLIGHTON
-    layer_set_hidden(s_canvas_qt_icon, quiet_time_is_active());
-    #else
+    // #ifdef BACKLIGHTON
+    // layer_set_hidden(s_canvas_qt_icon, quiet_time_is_active());
+    // #else
     layer_set_hidden(s_canvas_qt_icon, !quiet_time_is_active());
-    #endif
+    //#endif
 }
 
 static AppTimer *s_timeout_timer;
@@ -822,6 +822,8 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     layer_mark_dirty(s_bg_layer);
     layer_mark_dirty(s_canvas_layer);
     layer_mark_dirty(s_date_battery_logo_layer);
+    layer_mark_dirty(s_canvas_month_hand);
+    layer_mark_dirty(s_canvas_second_hand);
   }
 
   if (hrhand_t) {
@@ -1325,7 +1327,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   }
 
   // hide or show the seconds hand layer
-  layer_set_hidden(s_canvas_second_hand, !(showSeconds && settings.EnableSecondsHand));
+  //layer_set_hidden(s_canvas_second_hand, !(showSeconds && settings.EnableSecondsHand));
 
 }
 
@@ -1347,7 +1349,12 @@ static void draw_seconds_month_background(GContext *ctx) {
 
   GPoint origin = GPoint(config.seconds_circle_centre_x, config.seconds_circle_centre_y);
 //  GPoint origin_offset = GPoint(origin.x + config.hands_shadow/2, origin.y + config.hands_shadow/2);
+
+#ifdef PBL_COLOR
   GPoint origin_offset_minus = GPoint(origin.x - config.hands_shadow/2, origin.y - config.hands_shadow/2);
+#else 
+  GPoint origin_offset_minus = GPoint(origin.x - config.hands_shadow, origin.y - config.hands_shadow);
+#endif
 
 // Define shadow color
   GColor shadow_color = PBL_IF_BW_ELSE(settings.BWMinuteHandShadowColor,settings.MinuteHandShadowColor);
@@ -1365,11 +1372,32 @@ static void draw_seconds_month_background(GContext *ctx) {
   graphics_fill_circle(ctx, origin, config.seconds_circle_radius - 1 );
 
   //draw a thin circle in digits colour if hands shadow is off
-  if(!settings.ShadowOn){
-  graphics_context_set_stroke_color(ctx, settings.MinorTickColor); //settings.HourDigitsColor);
-  graphics_context_set_stroke_width(ctx, 1); // Same width as the hand
-  graphics_draw_circle(ctx, origin, config.seconds_circle_radius );
-  }
+  // if(!settings.ShadowOn){
+  // graphics_context_set_stroke_color(ctx, settings.MinorTickColor); //settings.HourDigitsColor);
+  // graphics_context_set_stroke_width(ctx, 1); // Same width as the hand
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius );
+
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 4);
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 8);
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 12);
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 16);
+  // #if defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 20);
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 24);
+  // #endif
+
+  // graphics_context_set_stroke_color(ctx, GColorBlack);
+
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 2);
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 6);
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 10);
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 14);
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 18);
+  // #if defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 22);
+  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 26);
+  // #endif
+  //}
 
   
   for (int i = 0; i < 12; i++) {
@@ -1410,11 +1438,17 @@ static void draw_month_hand(GContext *ctx, int angle, int length, int back_lengt
   //graphics_fill_circle(ctx, origin_offset_centre_shadow, settings.MinuteCentreSize); //started as 4
 
   // Draw the shadow for the second hand, with a small offset
+
   #ifdef PBL_COLOR
+  if(settings.ShadowOn){
+
   graphics_context_set_stroke_color(ctx, shadow_color);
-  graphics_context_set_stroke_width(ctx, settings.HourHandThickness); // Same width as the hand
+  graphics_context_set_stroke_width(ctx, settings.MinuteHandThickness); // Same width as the hand
   graphics_draw_line(ctx, GPoint(p1.x + 2, p1.y + 2), GPoint(p2.x + 2, p2.y + 2));
+  }
   #else
+
+  if(settings.BWShadowOn){
         GPoint s1 = GPoint(p3.x, p3.y);
         GPoint s2 = GPoint(p4.x, p4.y);
 
@@ -1438,7 +1472,7 @@ static void draw_month_hand(GContext *ctx, int angle, int length, int back_lengt
         graphics_context_set_fill_color(ctx, shadow_color);
         gpath_draw_filled(ctx, shadow_path);
         gpath_destroy(shadow_path);
-
+      }
   #endif
   // Now draw the second hand on top
   graphics_context_set_stroke_color(ctx, color);
@@ -1472,10 +1506,13 @@ static void draw_second_hand(GContext *ctx, int angle, int length, int back_leng
 
   // Draw the shadow for the second hand, with a small offset
   #ifdef PBL_COLOR
+  if(settings.ShadowOn){
   graphics_context_set_stroke_color(ctx, shadow_color);
-  graphics_context_set_stroke_width(ctx, settings.HourHandThickness); // Same width as the hand
+  graphics_context_set_stroke_width(ctx, settings.MinuteHandThickness); // Same width as the hand
   graphics_draw_line(ctx, GPoint(p1.x + 2, p1.y + 2), GPoint(p2.x + 2, p2.y + 2));
+  }
   #else
+  if(settings.BWShadowOn){
         GPoint s1 = GPoint(p3.x, p3.y);
         GPoint s2 = GPoint(p4.x, p4.y);
 
@@ -1499,6 +1536,7 @@ static void draw_second_hand(GContext *ctx, int angle, int length, int back_leng
         graphics_context_set_fill_color(ctx, shadow_color);
         gpath_draw_filled(ctx, shadow_path);
         gpath_destroy(shadow_path);
+      }
 
   #endif
   // Now draw the second hand on top
@@ -1566,11 +1604,18 @@ static void draw_hour_hand(GContext *ctx, int angle, int length, int back_length
   graphics_context_set_stroke_width(ctx, settings.HourHandThickness); // Same width as the hand
   
   #ifdef PBL_COLOR
+  if(settings.ShadowOn){
     graphics_draw_line(ctx, 
         GPoint(p3.x, p3.y), 
         GPoint(p4.x, p4.y)
       );
+
+       GPoint origin_back_offset = GPoint(p1.x + config.hands_shadow, p1.y + config.hands_shadow);
+        graphics_fill_circle(ctx, origin_back_offset, settings.BackSize);
+        graphics_fill_circle(ctx, origin_offset, settings.HourCentreSize); //started as 4
+    }
   #else  //switch to a fill as grey is not available as a line colour on BW screens
+  if(settings.BWShadowOn){
         GPoint s1 = GPoint(p3.x, p3.y);
         GPoint s2 = GPoint(p4.x, p4.y);
 
@@ -1594,13 +1639,14 @@ static void draw_hour_hand(GContext *ctx, int angle, int length, int back_length
         graphics_context_set_fill_color(ctx, shadow_color);
         gpath_draw_filled(ctx, shadow_path);
         gpath_destroy(shadow_path);
+
+        GPoint origin_back_offset = GPoint(p1.x + config.hands_shadow, p1.y + config.hands_shadow);
+        graphics_fill_circle(ctx, origin_back_offset, settings.BackSize);
+        graphics_fill_circle(ctx, origin_offset, settings.HourCentreSize); //started as 4
+      }
   #endif  
 
-  GPoint origin_back_offset = GPoint(p1.x + config.hands_shadow, p1.y + config.hands_shadow);
-  graphics_fill_circle(ctx, origin_back_offset, settings.BackSize);
-  graphics_fill_circle(ctx, origin_offset, settings.HourCentreSize); //started as 4
-
-  // Now draw the main hand on top
+   // Now draw the main hand on top
   graphics_context_set_stroke_color(ctx, color);
   graphics_context_set_stroke_width(ctx, settings.HourHandThickness);
   graphics_draw_line(ctx, p1, p2);
@@ -1659,11 +1705,16 @@ static void draw_minute_hand(GContext *ctx, int angle, int length, int back_leng
   graphics_context_set_stroke_width(ctx, settings.MinuteHandThickness); // Same width as the hand
   
   #ifdef PBL_COLOR
+  if(settings.ShadowOn){
     graphics_draw_line(ctx, 
         GPoint(p3.x, p3.y), 
         GPoint(p4.x, p4.y)
       );
+
+       
+    }
   #else  //switch to a fill as grey is not available as a line colour on BW screens
+  if(settings.BWShadowOn){
         GPoint s1 = GPoint(p3.x, p3.y);
         GPoint s2 = GPoint(p4.x, p4.y);
 
@@ -1687,11 +1738,14 @@ static void draw_minute_hand(GContext *ctx, int angle, int length, int back_leng
         graphics_context_set_fill_color(ctx, shadow_color);
         gpath_draw_filled(ctx, shadow_path);
         gpath_destroy(shadow_path);
+
+       
+      }
   #endif  
 
   GPoint origin_back_offset = GPoint(p1.x + config.hands_shadow/2, p1.y + config.hands_shadow/2);
-  graphics_fill_circle(ctx, origin_back_offset, settings.BackSize);
-  graphics_fill_circle(ctx, origin_offset_centre_shadow, settings.MinuteCentreSize); //started as 4
+        graphics_fill_circle(ctx, origin_back_offset, settings.BackSize);
+        graphics_fill_circle(ctx, origin_offset_centre_shadow, settings.MinuteCentreSize); //started as 4
 
   // Now draw the main hand on top
   graphics_context_set_stroke_color(ctx, color);
@@ -2113,7 +2167,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
     char daynow[5];
     snprintf(daynow, sizeof(daynow), "%d", current_date);
-  //  snprintf(daynow, sizeof(daynow), "%s", "30"); //use for testing instead of line above (30 is widest text for date)
+
 
     char datenow[15];
  
@@ -2140,8 +2194,8 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
               }
 
     fctx_set_offset(&fctx, fulldate_pos);
-    #ifdef DEBUG
-    fctx_draw_string(&fctx, "24", FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
+    #ifdef BACKLIGHTON
+    fctx_draw_string(&fctx, "WED 30", FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
     #else
     fctx_draw_string(&fctx, datenow, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
     #endif
@@ -2207,10 +2261,16 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
 // Update procedure for the seconds hand layer
 static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
+    
+    if(!settings.EnableSecondsHand){
+      return;
+    }
+
   if (!showSeconds || !prv_tick_time) {
       // Do not draw the second hand if it should be hidden or if time data is not yet available
       return;
     }
+
     GRect bounds = layer_get_unobstructed_bounds(layer);
     GRect full_bounds = layer_get_bounds(layer);
 
@@ -2224,9 +2284,9 @@ static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
   //int
   // seconds = 8;
 
-  if (!settings.EnableSecondsHand || !showSeconds) {
-    seconds = 0;
-  }
+  // if (!settings.EnableSecondsHand || !showSeconds) {
+  //   seconds = 0;
+  // }
 
   int seconds_angle = ((double)seconds / 60 * 360) - 90;
 
@@ -2237,7 +2297,10 @@ static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
 
 static void layer_update_proc_complication(Layer *layer, GContext *ctx) {
 
- 
+    if(!settings.EnableMonth && !settings.EnableSecondsHand){
+      return;
+    }
+
     if(!showSeconds || !prv_tick_time){
     return;
     }
@@ -2312,12 +2375,6 @@ static void layer_update_proc_bt(Layer * layer, GContext * ctx){
   if (!grect_equal(&full_bounds, &bounds)) {
     return;
   }
-   minutes = prv_tick_time->tm_min;
-   hours = prv_tick_time->tm_hour % 12;
-
-//use this for testing
-   // minutes = 30;
-   // hours = 9;
 
       int xPosition;
       int yPosition;
@@ -2377,12 +2434,6 @@ static void layer_update_proc_qt(Layer * layer, GContext * ctx){
       return;
     }
 
-   minutes = prv_tick_time->tm_min;
-   hours = prv_tick_time->tm_hour % 12;
-
-//use this for testing
-   // minutes = 30;
-   // hours = 9;
 
       int xPosition;
       int yPosition;
@@ -2440,22 +2491,17 @@ static void hour_min_hands_canvas_update_proc(Layer *layer, GContext *ctx) {
  GRect bounds = layer_get_unobstructed_bounds(layer);
  GRect full_bounds = layer_get_bounds(layer);
 
- //GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
 
-//use these for live version
-   minutes = prv_tick_time->tm_min;
-   hours = prv_tick_time->tm_hour % 12;
-
+#ifdef BACKLIGHTON
   ///use below for testing and for screenshots
-    // int minutes = 30;
-    // int hours = 9;
-  #ifdef HOUR
-    hours = HOUR;
-  #endif
-
-  #ifdef MINUTE
-    minutes = MINUTE;
-  #endif
+    int minutes = 8;
+    s_hours = 10;
+  
+#else
+  //use these for live version
+   minutes = prv_tick_time->tm_min;
+   s_hours = prv_tick_time->tm_hour % 12;
+#endif
 
   int minutes_angle = (360 * minutes / 60) - 90;
   int hours_angle   = (360 * (s_hours % 12) / 12) + (minutes / 2) - 90;
@@ -2558,7 +2604,7 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
 static void prv_window_load(Window *window) {
 
   #ifdef BACKLIGHTON
-    light_enable(true);  ///for ShareX screencapture gifs.  Must comment out declaration on line 18 before publishing, otherwise the backlight will stay on!
+    light_enable(true);  ///for ShareX screencapture gifs.  Must comment out declaration on line 11 before publishing, otherwise the backlight will stay on!
   #endif
 
   time_t temp = time(NULL);
@@ -2614,11 +2660,11 @@ static void prv_window_load(Window *window) {
      quiet_time_icon();
   s_canvas_bt_icon = layer_create(bounds);
     bool is_connected = connection_service_peek_pebble_app_connection();
-    #ifdef BACKLIGHTON
-    layer_set_hidden(s_canvas_bt_icon, !is_connected);
-    #else
+  //  #ifdef BACKLIGHTON
+  //  layer_set_hidden(s_canvas_bt_icon, !is_connected);
+  //  #else
     layer_set_hidden(s_canvas_bt_icon, is_connected);
-    #endif
+  //  #endif
   s_canvas_battery = layer_create(bounds);
   s_canvas_layer = layer_create(bounds);
   s_date_battery_logo_layer = layer_create(bounds);

@@ -2,7 +2,7 @@
 #include <pebble.h>
 
 // #define MODEL_COUNT 9
-#define SETTINGS_KEY 131
+#define SETTINGS_KEY 133
 
 // typedef struct DialSpec {
 //   GPoint markers[12];
