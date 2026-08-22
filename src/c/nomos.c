@@ -27,6 +27,8 @@ static Layer *s_canvas_bt_icon;
 static Layer *s_canvas_qt_icon;
 static Layer *s_canvas_battery;
 
+//static Layer *s_canvas_weather;
+
 // Fonts
 static GFont
     #ifdef PBL_PLATFORM_APLITE
@@ -48,6 +50,9 @@ static int s_hours; //24h version
 static int s_month;
 static int seconds;
 static bool showSeconds;
+
+//static int s_countdown = 30;
+//static int showWeather = 0;
 
 static ClaySettings settings;
 
@@ -120,8 +125,8 @@ typedef struct {
   int innertickinset;
   int tick_inset_outer;
   int tick_inset_inner;
-  int SecondsCentreOuterRadius;
-  int SecondsCentreInnerRadius;
+  int HourCentreOuterRadius;
+  int HourCentreInnerRadius;
   int hour_hand_p2x;
   int hour_hand_p2y;
   int min_hand_p2x;
@@ -137,6 +142,9 @@ typedef struct {
   GRect dial_digits_mask_a[1];
   GRect dial_digits_mask_b[1];
   GRect dial_digits_mask_c[1];
+  GRect UVDayValueRect[1];
+  GRect battery_arc_bounds[1];
+  GRect battery_arc_bounds_centre[1];
 } UIConfig;
 
 #ifdef PBL_PLATFORM_EMERY
@@ -206,8 +214,8 @@ static const UIConfig config = {
 .majorticklengthinner = 30,
 .tick_inset_outer = -10,
 .tick_inset_inner = 30,
-.SecondsCentreOuterRadius = 9,
-.SecondsCentreInnerRadius = 2,
+.HourCentreOuterRadius = 7,
+.HourCentreInnerRadius = 2,
 .SecondHandCentreOuterRadius = 5,
 .SecondHandCentreInnerRadius = 2,
 .hour_hand_p2x = 50,
@@ -216,12 +224,16 @@ static const UIConfig config = {
 .min_hand_p2y = 12,
 .second_hand_a = 22 + 3+ 1,
 .second_hand_b = 0,
-.seconds_circle_radius = 24+3,
+.seconds_circle_radius = 24+3+1,
 .seconds_circle_centre_x = 100,
 .seconds_circle_centre_y = 163-2-8+1,
 .dial_digits_mask_a = {{{100-15,23},{39,7}}},
 .dial_digits_mask_b = {{{100-19,0},{39,27}}},
-.dial_digits_mask_c = {{{100-15,228-27},{31,27}}}
+.dial_digits_mask_c = {{{100-15,228-27},{31,27}}},
+  .UVDayValueRect = {{{57,97},{25,25}}},     //UVI value daily forecast max
+  .battery_arc_bounds = {{{51,98},{37,37}}},        //UV arc, right of centre, middle row
+  .battery_arc_bounds_centre = {{{49,96},{41,41}}}    //UVI daily forecast maximum
+
 };
 #elif defined(PBL_PLATFORM_GABBRO)
 static const UIConfig config = {
@@ -280,22 +292,26 @@ static const UIConfig config = {
 .innertickinset = 12,
 .majorticklength = 6,
 .majorticklengthinner = 36,
-.SecondsCentreOuterRadius = 11,
-.SecondsCentreInnerRadius = 3,
+.HourCentreOuterRadius = 9,
+.HourCentreInnerRadius = 3,
 .SecondHandCentreOuterRadius = 5,
 .SecondHandCentreInnerRadius = 2,
 .hour_hand_p2x = 0,
 .hour_hand_p2y = 0,
 .min_hand_p2x = 0,
 .min_hand_p2y = 0,
-.second_hand_a = 28 + 2,
+.second_hand_a = 28 + 2-1,
 .second_hand_b = 0,
 .seconds_circle_radius = 30 + 1,
 .seconds_circle_centre_x = 130,
 .seconds_circle_centre_y = 189-6-6-1-1,
 .dial_digits_mask_a = {{{130-15,23-2},{39,7+2}}},
 .dial_digits_mask_b = {{{130-19,0},{39,27}}},
-.dial_digits_mask_c = {{{130-15,260-27},{31,27}}}
+.dial_digits_mask_c = {{{130-15,260-27},{31,27}}},
+  .UVDayValueRect = {{{57+29,98+13},{25,25}}},     //UVI value daily forecast max
+  .battery_arc_bounds = {{{51+29,99+13},{37,37}}},        //UV arc, right of centre, middle row
+  .battery_arc_bounds_centre = {{{49+29,97+13},{41,41}}}    //UVI daily forecast maximum
+
 };
 #elif defined(PBL_BW)
 static const UIConfig config = {
@@ -364,8 +380,8 @@ static const UIConfig config = {
 .majorticklengthinner = 14,
 .tick_inset_outer = -10,
 .tick_inset_inner = 20,
-.SecondsCentreOuterRadius = 7,
-.SecondsCentreInnerRadius = 1,
+.HourCentreOuterRadius = 6,
+.HourCentreInnerRadius = 2,
 .SecondHandCentreOuterRadius = 4,
 .SecondHandCentreInnerRadius = 1,
 .hour_hand_p2x = 36,
@@ -379,7 +395,12 @@ static const UIConfig config = {
 .seconds_circle_centre_y = 117-3,
 .dial_digits_mask_a = {{{72-14,22},{36,7}}},
 .dial_digits_mask_b = {{{72-18,0},{36,26}}},
-.dial_digits_mask_c = {{{72-13,168-26},{28,26}}}
+.dial_digits_mask_c = {{{72-13,168-26},{28,26}}},
+  .UVDayValueRect = {{{45-7+37,79-20+8+3+4-27},{20,14}}},     //UVI value daily forecast max
+  .battery_arc_bounds = {{{37+39,87-20+8-27},{24,24}}},        //UV arc, right of centre, middle row
+  .battery_arc_bounds_centre = {{{37-2+2+37,87-2-20+8-27},{24+4,24+4}}}    //UVI daily forecast maximum
+
+
 };
 #elif defined(PBL_ROUND)
 static const UIConfig config = {
@@ -438,8 +459,8 @@ static const UIConfig config = {
 .innertickinset = 11,
 .majorticklength = 6,
 .majorticklengthinner = 22,
-.SecondsCentreOuterRadius = 7,
-.SecondsCentreInnerRadius = 1,
+.HourCentreOuterRadius = 6,
+.HourCentreInnerRadius = 2,
 .SecondHandCentreOuterRadius = 4,
 .SecondHandCentreInnerRadius = 1,
 .hour_hand_p2x = 0,
@@ -453,7 +474,13 @@ static const UIConfig config = {
 .seconds_circle_centre_y = 128-2-5,
 .dial_digits_mask_a = {{{90-14,22},{36,7}}},
 .dial_digits_mask_b = {{{90-18,0},{36,26}}},
-.dial_digits_mask_c = {{{90-13,180-26},{28,26}}}
+.dial_digits_mask_c = {{{90-13,180-26},{28,26}}},
+  .UVDayValueRect = {{{45-7+18+1,79-20+8+3+4+4},{20,14}}},     //UVI value daily forecast max
+  .battery_arc_bounds = {{{37+18,87-20+8+4},{24,24}}},        //UV arc, right of centre, middle row
+  .battery_arc_bounds_centre = {{{37-2+18,87-2-20+8+4},{24+4,24+4}}}    //UVI daily forecast maximum
+
+
+
 };
 #else // Default for other platforms
 static const UIConfig config = {
@@ -522,8 +549,8 @@ static const UIConfig config = {
 .majorticklengthinner = 14,
 .tick_inset_outer = -10,
 .tick_inset_inner = 20,
-.SecondsCentreOuterRadius = 7,
-.SecondsCentreInnerRadius = 1,
+.HourCentreOuterRadius = 6,
+.HourCentreInnerRadius = 2,
 .SecondHandCentreOuterRadius = 4,
 .SecondHandCentreInnerRadius = 1,
 .hour_hand_p2x = 36,
@@ -537,7 +564,11 @@ static const UIConfig config = {
 .seconds_circle_centre_y = 117-3,
 .dial_digits_mask_a = {{{72-14,22},{36,7}}},
 .dial_digits_mask_b = {{{72-18,0},{36,26}}},
-.dial_digits_mask_c = {{{72-13,168-26},{28,26}}}
+.dial_digits_mask_c = {{{72-13,168-26},{28,26}}},
+  .UVDayValueRect = {{{45-7,79-20+8+3+4},{20,14}}},     //UVI value daily forecast max
+  .battery_arc_bounds = {{{37,87-20+8},{24,24}}},        //UV arc, right of centre, middle row
+  .battery_arc_bounds_centre = {{{37-2,87-2-20+8},{24+4,24+4}}}    //UVI daily forecast maximum
+
 };
 #endif
 
@@ -589,6 +620,7 @@ static void prv_save_settings(void) {
 // Set default settings
 static void prv_default_settings(void) {
  settings.EnableSecondsHand = true;
+ settings.AlwaysShowSubDial = false;
   settings.SecondsVisibleTime = 135;
   settings.EnableDate = true;
   settings.EnableMonth = false;
@@ -597,6 +629,7 @@ static void prv_default_settings(void) {
   settings.EnableLogo = false;
   snprintf(settings.LogoText, sizeof(settings.LogoText), "%s", "tangent");
   settings.BackgroundColor1 = GColorOxfordBlue;
+  settings.SubDialColor = GColorOxfordBlue;
   settings.MinuteHandShadowColor = GColorBlack;
   settings.MinorTickColor = GColorPictonBlue;
   settings.DateColor = GColorYellow;
@@ -611,6 +644,7 @@ static void prv_default_settings(void) {
   settings.BatteryLineColor = GColorOrange;
   settings.BWDateColor = GColorWhite;
   settings.BWBackgroundColor1 = GColorBlack;
+  settings.BWSubDialColor = GColorBlack;
   settings.BWMinuteHandShadowColor = GColorDarkGray;
   settings.BWMinHandBatLineColor = GColorWhite;
   settings.BWHourDigitsColor = GColorWhite;
@@ -629,9 +663,9 @@ static void prv_default_settings(void) {
   settings.AddZero12h = false;
   settings.RemoveZero24h = false;
   settings.ForegroundShape = true;  //true = round, false = rect
-  settings.MinuteCentreSize = config.SecondsCentreOuterRadius - 4;
-  settings.HourCentreSize = config.SecondsCentreOuterRadius;
-  settings.InnerCentreSize = config.SecondsCentreInnerRadius;
+  settings.MinuteCentreSize = config.HourCentreOuterRadius - 2;
+  settings.HourCentreSize = config.HourCentreOuterRadius;
+  settings.InnerCentreSize = config.HourCentreInnerRadius;
   settings.SecondOuterCentreSize = config.SecondHandCentreOuterRadius;
   settings.SecondInnerCentreSize = config.SecondHandCentreInnerRadius;
   settings.MinuteHandThickness = 2;
@@ -639,6 +673,15 @@ static void prv_default_settings(void) {
   settings.DigitalHour = true;
   settings.BackSize = 4;
   settings.BackLen = config.analogue_hand_b;
+
+////////Weather
+  // settings.UVMaxColor = GColorWhite;
+  // settings.UVNowColor = PBL_IF_BW_ELSE(GColorWhite,GColorRed);
+  // settings.UVArcColor = GColorLightGray;
+  // settings.UseWeather = false;
+  // settings.UpSlider = 30;
+  // settings.WeatherUnit = 0;
+  
 }
 
 // Quiet time icon handler
@@ -660,6 +703,9 @@ static void timeout_handler(void *context) {
     tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
 
   layer_mark_dirty(s_canvas_second_hand);
+  if (settings.AlwaysShowSubDial) {
+    layer_mark_dirty(s_canvas_comp_bg);   
+  }
   s_timeout_timer = NULL; // Set the handle to NULL after the timer expires
 
   //APP_LOG(APP_LOG_LEVEL_DEBUG, "timeout event");
@@ -738,6 +784,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *vibe_t = dict_find(iter, MESSAGE_KEY_VibeMode);
   Tuple *dateform_t = dict_find(iter,MESSAGE_KEY_DateFormat);
   Tuple *enable_seconds_t = dict_find(iter, MESSAGE_KEY_EnableSecondsHand);
+  Tuple *always_sub_t = dict_find(iter, MESSAGE_KEY_AlwaysShowSubDial);
   Tuple *enable_secondsvisible_t = dict_find(iter, MESSAGE_KEY_SecondsVisibleTime);
   Tuple *seconds_color_t = dict_find(iter, MESSAGE_KEY_SecondsHandColor);
   Tuple *bwseconds_color_t = dict_find(iter, MESSAGE_KEY_BWSecondsHandColor);
@@ -782,6 +829,34 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *icent_t = dict_find(iter, MESSAGE_KEY_InnerCentreSize);
   Tuple *back_t = dict_find(iter, MESSAGE_KEY_BackSize);
   Tuple *backlen_t = dict_find(iter, MESSAGE_KEY_BackLen);
+
+  Tuple *subdial_t = dict_find(iter, MESSAGE_KEY_SubDialColor);
+  Tuple *bwsubdial_t = dict_find(iter, MESSAGE_KEY_BWSubDialColor);
+
+  ////////Weather
+  // Tuple * uvarccol_t = dict_find(iter,MESSAGE_KEY_UVArcColor);
+  // Tuple * uvmaxcol_t = dict_find(iter,MESSAGE_KEY_UVMaxColor);
+  // Tuple * uvnowcol_t = dict_find(iter,MESSAGE_KEY_UVNowColor);
+  // Tuple * useweather_t = dict_find(iter, MESSAGE_KEY_UseWeather);
+  // Tuple * frequpdate_t = dict_find(iter, MESSAGE_KEY_UpSlider);
+
+  // if (frequpdate_t){
+  //   settings.UpSlider = (int) frequpdate_t -> value -> int32;
+  //   //Restart the counter
+  //   s_countdown = settings.UpSlider;
+  //    settings_changed = true;
+  // }
+
+  // if (useweather_t) {
+  //   settings.UseWeather = useweather_t->value->int32 != 0;
+  //   if(settings.UseWeather){
+  //     accel_tap_service_subscribe(accel_tap_handler); 
+  //     #ifdef DEBUG
+  //       APP_LOG(APP_LOG_LEVEL_DEBUG, "accel subscribed weather on");
+  //     #endif
+  //   }
+  //   settings_changed = true;
+  // }
 
   if (fg_shape_t) {
     settings.ForegroundShape = fg_shape_t->value->int32 == 1;
@@ -855,6 +930,13 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   if(minort_t){
     settings.showMinorTick = minort_t->value->int32 != 0;
     layer_mark_dirty(s_bg_layer);
+  }
+
+  if (always_sub_t){
+    settings.AlwaysShowSubDial = always_sub_t->value->int32 == 1;
+    layer_mark_dirty(s_canvas_comp_bg);
+    layer_mark_dirty(s_canvas_month_hand);
+    layer_mark_dirty(s_canvas_second_hand);
   }
 
   if (enable_seconds_t) {
@@ -987,18 +1069,23 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                         settings.BWMinuteHandShadowColor = GColorWhite;
                         }
                     settings.BWBackgroundColor1 = GColorWhite;
+                    settings.BWSubDialColor = GColorWhite;
                     settings.BWSecondsHandColor = GColorBlack;
                     settings.BWMonthHandColor = GColorBlack;
                     settings.BWMinHandBatLineColor = GColorBlack;
                     settings.BWHourDigitsColor = GColorBlack;
                     settings.BWMajorTickColor = GColorBlack;
                     settings.BWBTQTColor = GColorBlack;
+                    // settings.UVArcColor = GColorLightGray;
+                    // settings.UVMaxColor = GColorWhite;
+                    // settings.UVNowColor = GColorWhite;
                       theme_settings_changed = true;
                     //    APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme white selected");
           } else if (strcmp(bwthemeselect_t->value->cstring, "bl") == 0) {
               // Set the theme and other settings for "bl"
                     settings.BWDateColor = GColorWhite;
                     settings.BWBackgroundColor1 = GColorBlack;
+                    settings.BWSubDialColor = GColorBlack;
                     if (bwshadowon_t) {
                       settings.BWShadowOn = bwshadowon_t->value->int32 == 1;
                     }
@@ -1014,6 +1101,9 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     settings.BWHourDigitsColor = GColorWhite;
                     settings.BWMajorTickColor = GColorWhite;
                     settings.BWBTQTColor = GColorWhite;
+                    // settings.UVArcColor = GColorDarkGray;
+                    // settings.UVMaxColor = GColorBlack;
+                    // settings.UVNowColor = GColorBlack;
                       theme_settings_changed = true;
                     //    APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme black selected");
           } else if (strcmp(bwthemeselect_t->value->cstring, "cu") == 0) {
@@ -1023,6 +1113,11 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
                   if (bwbg_color1_t) {
                     settings.BWBackgroundColor1 = GColorFromHEX(bwbg_color1_t->value->int32);
+                    settings_changed = true;
+                  }
+
+                  if (bwsubdial_t) {
+                    settings.BWSubDialColor = GColorFromHEX(bwsubdial_t->value->int32);
                     settings_changed = true;
                   }
 
@@ -1067,6 +1162,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     layer_mark_dirty(s_canvas_bt_icon);
                     layer_mark_dirty(s_canvas_qt_icon);
                   }
+                  //  if (uvarccol_t){ settings.UVArcColor = GColorFromHEX(uvarccol_t-> value -> int32);}
+                  //  if (uvmaxcol_t){settings.UVMaxColor = GColorFromHEX(uvmaxcol_t-> value -> int32);}
+                  //  if (uvnowcol_t){settings.UVNowColor = GColorFromHEX(uvnowcol_t-> value -> int32);}
+                  //   layer_mark_dirty(s_canvas_weather);
                   theme_settings_changed = true;
                   //  APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme custom selected");
                 }
@@ -1086,6 +1185,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                         settings.MinuteHandShadowColor = GColorWhite;
                         }
                     settings.BackgroundColor1 = GColorWhite;
+                    settings.SubDialColor = GColorWhite;
                     settings.MinorTickColor = GColorBlack;
                     settings.DateColor = GColorBlack;
                     settings.HourDigitsColor = GColorBlack;
@@ -1095,12 +1195,16 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     settings.MajorTickColor = GColorBlack;
                     settings.BatteryLineColor = GColorOrange;
                     settings.BTQTColor = GColorDarkGray;
+                    // settings.UVArcColor = GColorLightGray;
+                    // settings.UVMaxColor = GColorWhite;
+                    // settings.UVNowColor = GColorRed;
                       theme_settings_changed = true;
                     //    APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme white selected");
           } else if (strcmp(themeselect_t->value->cstring, "bl") == 0) {
               // Set the theme and other settings for "bl"
 
                     settings.BackgroundColor1 = GColorBlack;
+                    settings.SubDialColor = GColorBlack;
                     if (shadowon_t) {
                       settings.ShadowOn = shadowon_t->value->int32 == 1;
                     }
@@ -1119,12 +1223,16 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     settings.MajorTickColor = GColorYellow;
                     settings.BatteryLineColor = GColorYellow;
                     settings.BTQTColor = GColorLightGray;
+                    // settings.UVArcColor = GColorLightGray;
+                    // settings.UVMaxColor = GColorWhite;
+                    // settings.UVNowColor = GColorRed;
                       theme_settings_changed = true;
                       //  APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme black selected");
           } else if (strcmp(themeselect_t->value->cstring, "bu") == 0) {
               // Set the theme and other settings for "bl"
 
                     settings.BackgroundColor1 = GColorOxfordBlue;
+                    settings.SubDialColor = GColorOxfordBlue;
                     if (shadowon_t) {
                       settings.ShadowOn = shadowon_t->value->int32 == 1;
                     }
@@ -1143,12 +1251,16 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     settings.MajorTickColor = GColorYellow;
                     settings.BatteryLineColor = GColorRed;
                     settings.BTQTColor = GColorPictonBlue;
+                    // settings.UVArcColor = GColorLightGray;
+                    // settings.UVMaxColor = GColorWhite;
+                    // settings.UVNowColor = GColorRed;
                       theme_settings_changed = true;
                       //  APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme blue selected");
           } else if (strcmp(themeselect_t->value->cstring, "pl") == 0) {
               // Set the theme and other settings for "bl"
 
                     settings.BackgroundColor1 = GColorPurple;
+                    settings.SubDialColor = GColorPurple;
                     if (shadowon_t) {
                       settings.ShadowOn = shadowon_t->value->int32 == 1;
                     }
@@ -1167,12 +1279,16 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     settings.MajorTickColor = GColorRichBrilliantLavender;
                     settings.BatteryLineColor = GColorBulgarianRose;
                     settings.BTQTColor = GColorImperialPurple;
+                    // settings.UVArcColor = GColorLightGray;
+                    // settings.UVMaxColor = GColorWhite;
+                    // settings.UVNowColor = GColorRed;
                       theme_settings_changed = true;
                       //  APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme purple selected");
           } else if (strcmp(themeselect_t->value->cstring, "gr") == 0) {
               // Set the theme and other settings for "gr"
 
                     settings.BackgroundColor1 = GColorBlack;
+                    settings.SubDialColor = GColorBlack;
                     if (shadowon_t) {
                       settings.ShadowOn = shadowon_t->value->int32 == 1;
                     }
@@ -1191,12 +1307,20 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     settings.MajorTickColor = GColorBrightGreen;
                     settings.BatteryLineColor = GColorPastelYellow;
                     settings.BTQTColor = GColorDarkGreen;
+                    // settings.UVArcColor = GColorDarkGray;
+                    // settings.UVMaxColor = GColorBlack;
+                    // settings.UVNowColor = GColorWhite;
                       theme_settings_changed = true;
                       //  APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme black & green selected");
           } else if (strcmp(themeselect_t->value->cstring, "cu") == 0) {
               // Set the theme for "cu" and handle custom colors
                   if (bg_color1_t) {
                     settings.BackgroundColor1 = GColorFromHEX(bg_color1_t->value->int32);
+                    settings_changed = true;
+                  }
+
+                   if (subdial_t) {
+                    settings.SubDialColor = GColorFromHEX(subdial_t->value->int32);
                     settings_changed = true;
                   }
 
@@ -1262,6 +1386,9 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     layer_mark_dirty(s_canvas_bt_icon);
                     layer_mark_dirty(s_canvas_qt_icon);
                   }
+                  // if (uvarccol_t){ settings.UVArcColor = GColorFromHEX(uvarccol_t-> value -> int32);}
+                  // if (uvmaxcol_t){settings.UVMaxColor = GColorFromHEX(uvmaxcol_t-> value -> int32);}
+                  // if (uvnowcol_t){settings.UVNowColor = GColorFromHEX(uvnowcol_t-> value -> int32);}
                   theme_settings_changed = true;
                 //    APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme custom selected");
                 }
@@ -1278,6 +1405,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     layer_mark_dirty(s_canvas_second_hand);
     layer_mark_dirty(s_canvas_month_hand);
     layer_mark_dirty(s_canvas_battery);
+   // layer_mark_dirty(s_canvas_weather);
   }
 
   if (theme_settings_changed) {
@@ -1291,6 +1419,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     layer_mark_dirty(s_canvas_qt_icon);
     layer_mark_dirty(s_canvas_bt_icon);
     layer_mark_dirty(s_canvas_battery);
+   // layer_mark_dirty(s_canvas_weather);
   }
 
   prv_save_settings();
@@ -1358,7 +1487,8 @@ static void draw_seconds_month_background(GContext *ctx) {
 
 // Define shadow color
   GColor shadow_color = PBL_IF_BW_ELSE(settings.BWMinuteHandShadowColor,settings.MinuteHandShadowColor);
-  GColor seconds_complication_color = PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1);
+  //GColor seconds_complication_color = PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1);
+  GColor seconds_complication_color = PBL_IF_BW_ELSE(settings.BWSubDialColor, settings.SubDialColor);
 
   // Set the antialiasing
   graphics_context_set_antialiased(ctx, true);
@@ -1509,7 +1639,7 @@ static void draw_second_hand(GContext *ctx, int angle, int length, int back_leng
   if(settings.ShadowOn){
   graphics_context_set_stroke_color(ctx, shadow_color);
   graphics_context_set_stroke_width(ctx, settings.MinuteHandThickness); // Same width as the hand
-  graphics_draw_line(ctx, GPoint(p1.x + 2, p1.y + 2), GPoint(p2.x + 2, p2.y + 2));
+  graphics_draw_line(ctx, GPoint(p1.x + config.hands_shadow/2, p1.y + config.hands_shadow/2), GPoint(p2.x + config.hands_shadow/2, p2.y + config.hands_shadow/2));
   }
   #else
   if(settings.BWShadowOn){
@@ -1920,6 +2050,23 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
         graphics_context_set_text_color(ctx, settings.BWDateColor);
         graphics_draw_text(ctx, BatterytoDraw, FontBattery, BatteryRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
       }
+
+                // GRect battery_arc_bounds = config.battery_arc_bounds[0];
+                
+                //     graphics_context_set_fill_color(ctx, settings.UVArcColor);
+                //     int32_t angle_start = DEG_TO_TRIGANGLE(30);
+                //     int32_t angle_end = DEG_TO_TRIGANGLE(180);
+                //     uint16_t inset_thickness = 8;
+                //     graphics_fill_radial(ctx,battery_arc_bounds,GOvalScaleModeFitCircle,inset_thickness,angle_start,angle_end);
+
+                //     graphics_context_set_fill_color(ctx, settings.UVMaxColor);// GColorBlack);
+                //     //graphics_fill_rect(ctx, UVMaxRect, 0, GCornerNone);
+                                    
+                //     int32_t angle_start_max = DEG_TO_TRIGANGLE(30 + (150* (100-s_battery_level))/100);
+                //     int32_t angle_end_max = DEG_TO_TRIGANGLE(180);
+                //     uint16_t inset_thickness_max = 8;
+                //     graphics_fill_radial(ctx,battery_arc_bounds,GOvalScaleModeFitCircle,inset_thickness_max,angle_start_max,angle_end_max);
+
    
   }
 
@@ -2037,7 +2184,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
               digit_rotation = digit_angle_trig + TRIG_MAX_ANGLE / 2;
             }
 
-        fixed_t text_radius = INT_TO_FIXED((bounds.size.w/2 - config.digit_inset ));
+        fixed_t text_radius = INT_TO_FIXED((bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset);
         
         snprintf(digit_string, sizeof digit_string, "%d", i);
         FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
@@ -2266,7 +2413,7 @@ static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
       return;
     }
 
-  if (!showSeconds || !prv_tick_time) {
+    if ((!showSeconds && !settings.AlwaysShowSubDial) || !prv_tick_time) {
       // Do not draw the second hand if it should be hidden or if time data is not yet available
       return;
     }
@@ -2297,11 +2444,12 @@ static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
 
 static void layer_update_proc_complication(Layer *layer, GContext *ctx) {
 
-    if(!settings.EnableMonth && !settings.EnableSecondsHand){
+  
+    if(!settings.EnableMonth && !settings.EnableSecondsHand && !settings.AlwaysShowSubDial){
       return;
     }
 
-    if(!showSeconds || !prv_tick_time){
+    if((!showSeconds && !settings.AlwaysShowSubDial) || !prv_tick_time){
     return;
     }
 
@@ -2620,7 +2768,9 @@ static void prv_window_load(Window *window) {
   GRect bounds = layer_get_bounds(window_layer);
 
   // Load fctx ffonts
+    #ifndef PBL_PLATFORM_APLITE
     FCTX_Font =  ffont_create_from_resource(RESOURCE_ID_FONT_DATE_FCTX);
+    #endif
     FontBTQTIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DRIPICONS_16));
     //non-fctx custom fonts for B&W screens
     #ifdef PBL_PLATFORM_APLITE
@@ -2714,7 +2864,9 @@ static void prv_window_unload(Window *window) {
   layer_destroy(s_canvas_bt_icon);
   layer_destroy(s_canvas_qt_icon);
   layer_destroy(s_date_battery_logo_layer);
+  #ifndef PBL_PLATFORM_APLITE
   ffont_destroy(FCTX_Font);
+  #endif
   #ifdef PBL_PLATFORM_APLITE
   fonts_unload_custom_font(FontDate);
   fonts_unload_custom_font(FontBattery);
@@ -2722,6 +2874,10 @@ static void prv_window_unload(Window *window) {
   fonts_unload_custom_font(FontHour);
   #endif
   fonts_unload_custom_font(FontBTQTIcons);
+  if (s_timeout_timer) {
+  app_timer_cancel(s_timeout_timer);
+  s_timeout_timer = NULL;
+  }
 }
 
 static void prv_init(void) {

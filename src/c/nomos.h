@@ -97,7 +97,23 @@ typedef struct ClaySettings {
   GColor BWMajorTickColor;
   GColor BTQTColor;
   GColor BWBTQTColor;
+  GColor SubDialColor;
+  GColor BWSubDialColor;
   bool BWShadowOn;
   bool ShadowOn;
   bool ForegroundShape;
+/////////////Weather
+  bool UseWeather;
+  int UVIndexMax;
+  int UVIndexNow;
+  int UVIndexDay;
+  int UpSlider;
+  int WeatherUnit;
+  char tempstring[8];
+  char iconnowstring[4];
+  GColor UVMaxColor;
+  GColor UVNowColor;
+  GColor UVArcColor;
+  GColor WeatherColor;
+  bool AlwaysShowSubDial;
 } __attribute__((__packed__)) ClaySettings;

@@ -77,11 +77,59 @@ module.exports = [
         "messageKey": "SecondsVisibleTime",
         "defaultValue": 135,
         "label": "Seconds hand visibility",
-        "description": "Visibility of seconds hand, in seconds. Timer starts after a tap, shake, or watchface launch. Setting to max value will keep the seconds hand permanently on",
+        "description": "Set to 135 for always-on. Otherwise, shake to show the seconds hand temporarily for selected duration",
         "min": 15,
         "max": 135,
         "step": 15
       },
+      {
+        "type": "toggle",
+        "label": "Always show sub-dial",
+        "messageKey": "AlwaysShowSubDial",
+        "description": "Keeps the sub-dial visible when the seconds hand times out (it freezes in place instead of disappearing). Seconds hand will jump to 12 position at the next minute, then back to correct time on the next wrist shake",
+        "defaultValue": false
+      },
+      // {
+      //   "type": "select",
+      //   "messageKey": "SecondsVisibleTime",
+      //   "defaultValue": 135,
+      //   "label": "Seconds hand visibility",
+      //   "description": "Visibility of seconds hand, in seconds. Timer starts after a tap, shake, or watchface launch. Setting to max value will keep the seconds hand permanently on",
+      //   "options": [
+      //       { 
+      //         "label": "Off", 
+      //         "value": 0 
+      //       },
+      //       { 
+      //         "label": "15 seconds",
+      //         "value": 15 
+      //       },
+      //       { 
+      //         "label": "30 seconds",
+      //         "value": 30 
+      //       },
+      //       { 
+      //         "label": "45 seconds",
+      //         "value": 30 
+      //       },
+      //       { 
+      //         "label": "1 minute",
+      //         "value": 60 
+      //       },
+      //       { 
+      //         "label": "90 seconds",
+      //         "value": 90
+      //       },
+      //       { 
+      //         "label": "2 minutes",
+      //         "value": 120
+      //       },
+      //       { 
+      //         "label": "Always on",
+      //         "value": 135
+      //       }
+      //     ]
+      // },
       // {
       //   "type": "toggle",
       //   "label": "Logo visible",
@@ -225,13 +273,13 @@ module.exports = [
         "type": "color",
         "label": "Hours Digits Colour",
         "messageKey": "HourDigitsColor",
-        "defaultValue": "FFFFFF"
+        "defaultValue": "000000"
       },
       {
         "type": "color",
         "label": "Minute & Hour Hand Colour",
         "messageKey": "MinutesHandColor",
-        "defaultValue": "FFFFFF"
+        "defaultValue": "FF5500"
       },
       {
         "type": "color",
@@ -244,6 +292,12 @@ module.exports = [
         "label": "Month Hand Colour",
         "messageKey": "MonthHandColor",
         "defaultValue": "FF5500"
+      },
+      {
+        "type": "color",
+        "label": "Sub-dial Background Colour",
+        "messageKey": "SubDialColor",
+        "defaultValue": "FFFF55"
       },
       {
         "type": "color",
@@ -343,6 +397,12 @@ module.exports = [
       },
       {
         "type": "color",
+        "label": "Sub-dial Background Colour",
+        "messageKey": "BWSubDialColor",
+        "defaultValue": "FFFFFF"
+      },
+      {
+        "type": "color",
         "label": "Hours Digits Colour",
         "messageKey": "BWHourDigitsColor",
         "defaultValue": "000000"
@@ -389,12 +449,45 @@ module.exports = [
         "description": "Default = 2",
         "defaultValue": 2,
         "min": 1,
-        "max": 5,
+        "max": 7,
         "step": 1
       },
       {
         "type": "slider",
         "capabilities": ["NOT_PLATFORM_GABBRO", "NOT_PLATFORM_EMERY"],
+        "label": "Minute Hand Centre Radius",
+        "messageKey": "MinuteCentreSize",
+        "defaultValue": 4,
+        "description": "Default = 4",
+        "min": 1,
+        "max": 11,
+        "step": 1
+      },
+      {
+        "type": "slider",
+        "capabilities": ["NOT_PLATFORM_GABBRO", "NOT_PLATFORM_EMERY"],
+        "label": "Hour Hand Centre Radius",
+        "messageKey": "HourCentreSize",
+        "defaultValue": 6,
+        "description": "Default = 6",
+        "min": 1,
+        "max": 11,
+        "step": 1
+      },
+      {
+        "type": "slider",
+        "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_EMERY"],
+        "label": "Minute Hand Centre Radius",
+        "messageKey": "MinuteCentreSize",
+        "defaultValue": 7,
+        "description": "Default = 7",
+        "min": 1,
+        "max": 11,
+        "step": 1
+      },
+      {
+        "type": "slider",
+        "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_GABBRO"],
         "label": "Minute Hand Centre Radius",
         "messageKey": "MinuteCentreSize",
         "defaultValue": 5,
@@ -405,7 +498,18 @@ module.exports = [
       },
       {
         "type": "slider",
-        "capabilities": ["NOT_PLATFORM_GABBRO", "NOT_PLATFORM_EMERY"],
+        "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_EMERY"],
+        "label": "Hour Hand Centre Radius",
+        "messageKey": "HourCentreSize",
+        "defaultValue": 9,
+        "description": "Default = 9",
+        "min": 1,
+        "max": 11,
+        "step": 1
+      },
+      {
+        "type": "slider",
+        "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_GABBRO"],
         "label": "Hour Hand Centre Radius",
         "messageKey": "HourCentreSize",
         "defaultValue": 7,
@@ -416,40 +520,7 @@ module.exports = [
       },
       {
         "type": "slider",
-        "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT"],
-        "label": "Minute Hand Centre Radius",
-        "messageKey": "MinuteCentreSize",
-        "defaultValue": 7,
-        "description": "Default = 7 on PT2, 9 on PR2",
-        "min": 1,
-        "max": 11,
-        "step": 1
-      },
-      {
-        "type": "slider",
-        "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT"],
-        "label": "Hour Hand Centre Radius",
-        "messageKey": "HourCentreSize",
-        "defaultValue": 9,
-        "description": "Default = 9 on PT2, 11 on PR2",
-        "min": 1,
-        "max": 11,
-        "step": 1
-      },
-      {
-        "type": "slider",
         "capabilities": ["NOT_PLATFORM_GABBRO", "NOT_PLATFORM_EMERY"],
-        "label": "Hands Centre Inner Radius",
-        "messageKey": "InnerCentreSize",
-        "defaultValue": 1,
-        "description": "Default = 1",
-        "min": 0,
-        "max": 9,
-        "step": 1
-      },
-      {
-        "type": "slider",
-        "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT"],
         "label": "Hands Centre Inner Radius",
         "messageKey": "InnerCentreSize",
         "defaultValue": 2,
@@ -460,10 +531,32 @@ module.exports = [
       },
       {
         "type": "slider",
+        "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_GABBRO"],
+        "label": "Hands Centre Inner Radius",
+        "messageKey": "InnerCentreSize",
+        "defaultValue": 2,
+        "description": "Default = 2",
+        "min": 0,
+        "max": 9,
+        "step": 1
+      },
+      {
+        "type": "slider",
+        "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_EMERY"],
+        "label": "Hands Centre Inner Radius",
+        "messageKey": "InnerCentreSize",
+        "defaultValue": 3,
+        "description": "Default = 3",
+        "min": 0,
+        "max": 9,
+        "step": 1
+      },
+      {
+        "type": "slider",
         "label": "Hands End Radius",
         "messageKey": "BackSize",
-        "defaultValue": 4,
-        "description": "Default = 4",
+        "defaultValue": 0,
+        "description": "Default = 0",
         "min": 0,
         "max": 9,
         "step": 1
