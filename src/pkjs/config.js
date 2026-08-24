@@ -138,6 +138,10 @@ module.exports = [
               "label": "Month (12=Dec, 6=Jun)",
               "value": 3 
             },
+            { 
+              "label": "Month always on + seconds with timeout",
+              "value": 6
+            },
             // { 
             //   "label": "Battery Percentage",
             //   "value": 4 
@@ -145,10 +149,6 @@ module.exports = [
             { 
               "label": "Second Timezone",
               "value": 5
-            },
-            { 
-              "label": "Month hand always on + seconds hand on shake",
-              "value": 6
             }
           ]
       },

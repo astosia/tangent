@@ -511,7 +511,8 @@ module.exports = function(minified) {
     };
 
     var TZ_SUBDIAL_VALUE = 5; // matches "Second Timezone" option in SubDialChoice
-    var SECONDS_SUBDIAL_VALUES = [2, 6]; // "Seconds, with Timeout" / "Month hand + seconds on shake"
+    var SECONDS_SUBDIAL_VALUES_A = [2]; // "Seconds, with Timeout" 
+    var SECONDS_SUBDIAL_VALUES_B = [2,6]; // "Month hand + seconds on shake" 
     var SECONDS_SWEEP_VALUE = [1,2,6]; //Seconds always on, or with timeout, to show sweep option
 
     // Shows the timezone-related fields only when SubDialChoice == 5.
@@ -540,21 +541,52 @@ module.exports = function(minified) {
     };
 
     // Shows the seconds-hand-related fields only when SubDialChoice is one of the temporary seconds-hand modes (2 or 6)
-    var updateSecondsSectionVisibility = function() {
+    var updateSecondsSectionVisibilityA = function() {
         var subdial = config.getItemByMessageKey("SubDialChoice");
         if (!subdial) return;
 
         var currentValue = parseInt(subdial.get(), 10);
         var isSecondsMode = false;
-        for (var i = 0; i < SECONDS_SUBDIAL_VALUES.length; i++) {
-            if (SECONDS_SUBDIAL_VALUES[i] === currentValue) {
+        for (var i = 0; i < SECONDS_SUBDIAL_VALUES_A.length; i++) {
+            if (SECONDS_SUBDIAL_VALUES_A[i] === currentValue) {
                 isSecondsMode = true;
                 break;
             }
         }
 
         var idsToToggle = ["SECONDS_HEADING"];
-        var keysToToggle = ["SecondsVisibleTime", "AlwaysShowSubDial"];
+        var keysToToggle = ["AlwaysShowSubDial"];
+
+        var j, item;
+        for (j = 0; j < idsToToggle.length; j++) {
+            item = config.getItemById(idsToToggle[j]);
+            if (item) {
+                if (isSecondsMode) { item.show(); } else { item.hide(); }
+            }
+        }
+        for (j = 0; j < keysToToggle.length; j++) {
+            item = config.getItemByMessageKey(keysToToggle[j]);
+            if (item) {
+                if (isSecondsMode) { item.show(); } else { item.hide(); }
+            }
+        }
+    };
+
+    var updateSecondsSectionVisibilityB = function() {
+        var subdial = config.getItemByMessageKey("SubDialChoice");
+        if (!subdial) return;
+
+        var currentValue = parseInt(subdial.get(), 10);
+        var isSecondsMode = false;
+        for (var i = 0; i < SECONDS_SUBDIAL_VALUES_B.length; i++) {
+            if (SECONDS_SUBDIAL_VALUES_B[i] === currentValue) {
+                isSecondsMode = true;
+                break;
+            }
+        }
+
+        var idsToToggle = ["SECONDS_HEADING"];
+        var keysToToggle = ["SecondsVisibleTime"];
 
         var j, item;
         for (j = 0; j < idsToToggle.length; j++) {
@@ -623,11 +655,13 @@ module.exports = function(minified) {
         var subdial = config.getItemByMessageKey("SubDialChoice");
         if (subdial) {
             subdial.on('change', updateTimezoneSectionVisibility);
-            subdial.on('change', updateSecondsSectionVisibility);
+            subdial.on('change', updateSecondsSectionVisibilityA);
+            subdial.on('change', updateSecondsSectionVisibilityB);
             subdial.on('change', updateSweepVisibility);
         }
         updateTimezoneSectionVisibility();
-        updateSecondsSectionVisibility();
+        updateSecondsSectionVisibilityA();
+        updateSecondsSectionVisibilityB();
         updateSweepVisibility();
     });
 };
