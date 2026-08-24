@@ -26,6 +26,13 @@ module.exports = [
       },
       {
         "type": "toggle",
+        "label": "Digit Style",
+        "messageKey": "Roman",
+        "description": "Off = Numbers, On = Roman Numerals",
+        "defaultValue": false
+      },
+      {
+        "type": "toggle",
         "label": "Date visible",
         "messageKey": "EnableDate",
         "description": "Replaces the 6 at the bottom of the dial. Select format:",
@@ -60,35 +67,191 @@ module.exports = [
       },
       {
         "type": "toggle",
-        "label": "Month hand visible",
-        "messageKey": "EnableMonth",
-        "description": "Shows on sub-dial, 12 position = December, 6 = June",
-        "defaultValue": false
+        "label": "Battery Value visible",
+        "messageKey": "EnableBattery",
+        "defaultValue": true
       },
       {
         "type": "toggle",
-        "label": "Seconds hand visible",
-        "messageKey": "EnableSecondsHand",
-        "description": "Shows on sub-dial",
+        "label": "Battery Meter visible",
+        "messageKey": "EnableBatteryLine",
         "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "label": "Show Major Tickmarks",
+        "messageKey": "showMajorTick",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "label": "Show Minor Tickmarks",
+        "messageKey": "showMinorTick",
+        "defaultValue": true
+      },
+      {
+        "type": "radiogroup",
+        "messageKey": "VibeMode",
+        "label": "Vibrate on Bluetooth Disconnect",
+        "defaultValue": "0",
+        "options": [
+          {
+            "label": "Respects Quiet Time", 
+            "value": "0"
+          },
+          {
+            "label": "Always Vibrate on BT disconnect",
+            "value": "1" 
+          },
+          {
+             "label": "Never Vibrate on BT disconnect", 
+             "value": "2" 
+          }
+          ]
+        },
+        // {
+        // "type": "toggle",
+        // "label": "Show Larger Sub-dial",
+        // "messageKey": "BigSub",
+        // "defaultValue": false
+        // },
+        {
+        "type": "select",
+        "messageKey": "SubDialChoice",
+        "defaultValue": 0,
+        "label": "SUB DIAL OPTION",
+        "description": "Choose what to show on the sub-dial",
+        "options": [
+            { 
+              "label": "Off, don't show sub-dial", 
+              "value": 0 
+            },
+            { 
+              "label": "Seconds, Always On",
+              "value": 1 
+            },
+            { 
+              "label": "Seconds, with Timeout",
+              "value": 2 
+            },
+            { 
+              "label": "Month (12=Dec, 6=Jun)",
+              "value": 3 
+            },
+            // { 
+            //   "label": "Battery Percentage",
+            //   "value": 4 
+            // },
+            { 
+              "label": "Second Timezone",
+              "value": 5
+            },
+            { 
+              "label": "Month hand always on + seconds hand on shake",
+              "value": 6
+            }
+          ]
+      },
+      // {
+      //   "type": "toggle",
+      //   "label": "Month hand visible",
+      //   "messageKey": "EnableMonth",
+      //   "description": "Shows on sub-dial, 12 position = December, 6 = June",
+      //   "defaultValue": false
+      // },
+      // {
+      //   "type": "toggle",
+      //   "label": "Seconds hand visible",
+      //   "messageKey": "EnableSecondsHand",
+      //   "description": "Shows on sub-dial",
+      //   "defaultValue": true
+      // },
+      {
+        "type": "heading",
+        "id": "SECONDS_HEADING",
+        "defaultValue": "Second hand options",
+        "description": "Use when second hand is selected on sub-dial"
       },
       {
         "type": "slider",
         "messageKey": "SecondsVisibleTime",
-        "defaultValue": 135,
+        "defaultValue": 15,
         "label": "Seconds hand visibility",
-        "description": "Set to 135 for always-on. Otherwise, shake to show the seconds hand temporarily for selected duration",
+        "description": "When Seconds with Timeout is on the sub-dial, shake to show the seconds hand for selected duration",
         "min": 15,
-        "max": 135,
+        "max": 120,
         "step": 15
       },
       {
         "type": "toggle",
-        "label": "Always show sub-dial",
+        "label": "Show sub-dial when Seconds timeout",
         "messageKey": "AlwaysShowSubDial",
         "description": "Keeps the sub-dial visible when the seconds hand times out (it freezes in place instead of disappearing). Seconds hand will jump to 12 position at the next minute, then back to correct time on the next wrist shake",
         "defaultValue": false
       },
+      {
+        "type": "toggle",
+        "label": "Sweep Second Hand",
+        "messageKey": "SmoothSweep",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "description": "Updates the second hand 5 times per second to give a smoother movement - will reduce battery life!",
+        "defaultValue": false
+      },
+      // {
+      //   "type": "toggle",
+      //   "messageKey": "TZ_MODE",
+      //   "label": "Show 2nd Timezone",
+      //   "description": "OFF = Don't show, ON = Show",
+      //   "defaultValue": false
+      // },
+      {
+        "type": "heading",
+        "id": "TZ_HEADING",
+        "defaultValue": "Timezone options",
+        "description": "Use when 2nd Timezone is selected on sub-dial"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "showremoteAMPM",
+        "label": "Show AM PM mark for 2nd timezone",
+        "description": "Shows extra circle on the sub-dial hour hand when 2nd Timezone is PM",
+        "defaultValue": true
+      },
+      // {
+      //   "type": "select",
+      //   "messageKey": "TZ_ID",
+      //   "label": "2nd Timezone",
+      //   "description": "Data provided by timeapi.io",
+      //   "options": [
+      //     { "label": "Select a Zone", "value": "" }
+      //     ]
+      // },
+      {
+        "type": "input",
+        "messageKey": "TZ_ID",
+        "label": "2nd Timezone",
+        "description": "Data provided by timeapi.io. Start typing a city or region to search.",
+        "defaultValue": ""
+      },
+      {
+        "type": "input",
+        "messageKey": "TZ_ID_STATE",
+        "defaultValue": ""
+      },
+      {
+        "type": "button",
+        "id": "TZ_BUTTON",
+        "primary": true,
+        "defaultValue": "Fetch Timezones",
+        "description": "Tap to reload the list"
+      },
+      {
+        "type": "text",
+        "id": "TZ_DEBUG",
+        "defaultValue": ""
+      }
+    ]
+  },
       // {
       //   "type": "select",
       //   "messageKey": "SecondsVisibleTime",
@@ -145,52 +308,8 @@ module.exports = [
       //      "placeholder": "tangent"
       //    }
       // },
-      {
-        "type": "toggle",
-        "label": "Battery Value visible",
-        "messageKey": "EnableBattery",
-        "defaultValue": true
-      },
-      {
-        "type": "toggle",
-        "label": "Battery Meter visible",
-        "messageKey": "EnableBatteryLine",
-        "defaultValue": true
-      },
-      {
-        "type": "toggle",
-        "label": "Show Major Tickmarks",
-        "messageKey": "showMajorTick",
-        "defaultValue": true
-      },
-      {
-        "type": "toggle",
-        "label": "Show Minor Tickmarks",
-        "messageKey": "showMinorTick",
-        "defaultValue": true
-      },
-      {
-        "type": "radiogroup",
-        "messageKey": "VibeMode",
-        "label": "Vibrate on Bluetooth Disconnect",
-        "defaultValue": "0",
-        "options": [
-          {
-            "label": "Respects Quiet Time", 
-            "value": "0"
-          },
-          {
-            "label": "Always Vibrate on BT disconnect",
-            "value": "1" 
-          },
-          {
-             "label": "Never Vibrate on BT disconnect", 
-             "value": "2" 
-          }
-        ]
-      }
-    ]
-  },
+
+  
   {
     "type": "submit",
     "defaultValue": "Save"

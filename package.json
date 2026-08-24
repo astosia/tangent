@@ -1,7 +1,7 @@
 {
   "name": "tangent",
   "author": "astosia",
-  "version": "1.7.0",
+  "version": "2.0.0",
   "keywords": [
     "pebble",
     "watchface",
@@ -104,7 +104,18 @@
       "UseWeather",
       "UpSlider",
       "SubDialColor",
-      "BWSubDialColor"
+      "BWSubDialColor",
+      "Roman",
+      "RemoteTimeOffsetMinutes",
+      "TZ_ID",
+      "TZ_ID_STATE",
+      "TZ_MODE",
+      "TZ_OFFSET",
+      "TZ_CODE",
+      "TZ_STATUS_MESSAGE",
+      "showremoteAMPM",
+      "SubDialChoice",
+      "SmoothSweep"
     ],
     "resources": {
       "media": [

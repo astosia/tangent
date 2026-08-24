@@ -9,9 +9,14 @@
 
 ////remember to comment out before publishing!!!!
 //#define BACKLIGHTON   ///Use this for ShareX screencapture GIFs
-//#define DEBUG         ///Use this for showing max size of complications
+//#define DEBUG         ///Use this for debugging and showing max size of complications
 ////remember to comment out before publishing!!!!
 #define SECONDS_TICK_INTERVAL_MS 1000
+#ifdef PBL_PLATFORM_APLITE
+  #define SMOOTH_SWEEP_INTERVAL_MS 1000  //how often the second hand updates when SmoothSweep is on
+#else
+  #define SMOOTH_SWEEP_INTERVAL_MS 200
+#endif
 
 // Main window and layers
 static Window *s_window;
@@ -22,10 +27,14 @@ static Layer *s_dial_layer;
 static Layer *s_date_battery_logo_layer;
 static Layer *s_canvas_second_hand;
 static Layer *s_canvas_month_hand;
+static Layer *s_canvas_tz;
 static Layer *s_canvas_comp_bg;
 static Layer *s_canvas_bt_icon;
 static Layer *s_canvas_qt_icon;
 static Layer *s_canvas_battery;
+
+struct tm g_local_time;
+struct tm g_remote_time; //second timezone settings
 
 //static Layer *s_canvas_weather;
 
@@ -42,6 +51,7 @@ static GFont
 FFont* FCTX_Font;
 // Time and date variables
 static struct tm *prv_tick_time;
+static time_t g_current_epoch;
 static int current_date;
 static int s_weekday;
 static int minutes;
@@ -145,6 +155,7 @@ typedef struct {
   GRect UVDayValueRect[1];
   GRect battery_arc_bounds[1];
   GRect battery_arc_bounds_centre[1];
+  int romanadjust;
 } UIConfig;
 
 #ifdef PBL_PLATFORM_EMERY
@@ -206,8 +217,8 @@ static const UIConfig config = {
 .corner_radius_minortickrect = 20,
 .majortickrect_w = 86 + 4 + 4,
 .majortickrect_h = 100 + 4 + 4,
-.minortickrect_w = 90 + 4,
-.minortickrect_h = 104 + 4,
+.minortickrect_w = 90 + 4 + 2,
+.minortickrect_h = 104 + 4 + 2,
 .outertickinset = 6,
 .innertickinset = 12,
 .majorticklength = 6,
@@ -232,8 +243,8 @@ static const UIConfig config = {
 .dial_digits_mask_c = {{{100-15,228-27},{31,27}}},
   .UVDayValueRect = {{{57,97},{25,25}}},     //UVI value daily forecast max
   .battery_arc_bounds = {{{51,98},{37,37}}},        //UV arc, right of centre, middle row
-  .battery_arc_bounds_centre = {{{49,96},{41,41}}}    //UVI daily forecast maximum
-
+  .battery_arc_bounds_centre = {{{49,96},{41,41}}},    //UVI daily forecast maximum
+.romanadjust = 2
 };
 #elif defined(PBL_PLATFORM_GABBRO)
 static const UIConfig config = {
@@ -310,8 +321,8 @@ static const UIConfig config = {
 .dial_digits_mask_c = {{{130-15,260-27},{31,27}}},
   .UVDayValueRect = {{{57+29,98+13},{25,25}}},     //UVI value daily forecast max
   .battery_arc_bounds = {{{51+29,99+13},{37,37}}},        //UV arc, right of centre, middle row
-  .battery_arc_bounds_centre = {{{49+29,97+13},{41,41}}}    //UVI daily forecast maximum
-
+  .battery_arc_bounds_centre = {{{49+29,97+13},{41,41}}},    //UVI daily forecast maximum
+.romanadjust = 0
 };
 #elif defined(PBL_BW)
 static const UIConfig config = {
@@ -398,8 +409,8 @@ static const UIConfig config = {
 .dial_digits_mask_c = {{{72-13,168-26},{28,26}}},
   .UVDayValueRect = {{{45-7+37,79-20+8+3+4-27},{20,14}}},     //UVI value daily forecast max
   .battery_arc_bounds = {{{37+39,87-20+8-27},{24,24}}},        //UV arc, right of centre, middle row
-  .battery_arc_bounds_centre = {{{37-2+2+37,87-2-20+8-27},{24+4,24+4}}}    //UVI daily forecast maximum
-
+  .battery_arc_bounds_centre = {{{37-2+2+37,87-2-20+8-27},{24+4,24+4}}},    //UVI daily forecast maximum
+.romanadjust = 1
 
 };
 #elif defined(PBL_ROUND)
@@ -477,8 +488,8 @@ static const UIConfig config = {
 .dial_digits_mask_c = {{{90-13,180-26},{28,26}}},
   .UVDayValueRect = {{{45-7+18+1,79-20+8+3+4+4},{20,14}}},     //UVI value daily forecast max
   .battery_arc_bounds = {{{37+18,87-20+8+4},{24,24}}},        //UV arc, right of centre, middle row
-  .battery_arc_bounds_centre = {{{37-2+18,87-2-20+8+4},{24+4,24+4}}}    //UVI daily forecast maximum
-
+  .battery_arc_bounds_centre = {{{37-2+18,87-2-20+8+4},{24+4,24+4}}},    //UVI daily forecast maximum
+.romanadjust = 0
 
 
 };
@@ -567,8 +578,8 @@ static const UIConfig config = {
 .dial_digits_mask_c = {{{72-13,168-26},{28,26}}},
   .UVDayValueRect = {{{45-7,79-20+8+3+4},{20,14}}},     //UVI value daily forecast max
   .battery_arc_bounds = {{{37,87-20+8},{24,24}}},        //UV arc, right of centre, middle row
-  .battery_arc_bounds_centre = {{{37-2,87-2-20+8},{24+4,24+4}}}    //UVI daily forecast maximum
-
+  .battery_arc_bounds_centre = {{{37-2,87-2-20+8},{24+4,24+4}}},    //UVI daily forecast maximum
+.romanadjust = 1
 };
 #endif
 
@@ -619,11 +630,11 @@ static void prv_save_settings(void) {
 
 // Set default settings
 static void prv_default_settings(void) {
- settings.EnableSecondsHand = true;
+ //settings.EnableSecondsHand = true;
  settings.AlwaysShowSubDial = false;
-  settings.SecondsVisibleTime = 135;
+  settings.SecondsVisibleTime = 15;
   settings.EnableDate = true;
-  settings.EnableMonth = false;
+//  settings.EnableMonth = false;
   settings.EnableBattery = true;
   settings.EnableBatteryLine = true;
   settings.EnableLogo = false;
@@ -673,6 +684,12 @@ static void prv_default_settings(void) {
   settings.DigitalHour = true;
   settings.BackSize = 4;
   settings.BackLen = config.analogue_hand_b;
+  settings.Roman = false;
+  settings.SubDialChoice = 2;
+  settings.tz_mode = 0;
+  settings.tz_id = 0;
+  settings.tz_offset = 0;
+  settings.SmoothSweep = false;
 
 ////////Weather
   // settings.UVMaxColor = GColorWhite;
@@ -682,6 +699,22 @@ static void prv_default_settings(void) {
   // settings.UpSlider = 30;
   // settings.WeatherUnit = 0;
   
+}
+
+static int REMOTE_TIME_OFFSET_HOURS = 0;
+static int REMOTE_TIME_OFFSET_MINUTES = 0;
+
+void update_offset_vars(int32_t total_seconds) {
+  
+    int32_t abs_seconds = (total_seconds < 0) ? -total_seconds : total_seconds;
+
+    REMOTE_TIME_OFFSET_HOURS = abs_seconds / 3600;
+    REMOTE_TIME_OFFSET_MINUTES = (abs_seconds % 3600) / 60;
+    
+    // Keep signage for hours if negative:
+    if (total_seconds < 0) {
+        REMOTE_TIME_OFFSET_HOURS = -REMOTE_TIME_OFFSET_HOURS;
+    }
 }
 
 // Quiet time icon handler
@@ -694,10 +727,79 @@ static void quiet_time_icon () {
 }
 
 static AppTimer *s_timeout_timer;
+static AppTimer *s_smooth_sweep_timer;
 
+
+
+
+static bool second_hand_is_active(void) {
+  return (showSeconds) &&  //|| settings.AlwaysShowSubDial) &&
+         (settings.SubDialChoice == 1 || settings.SubDialChoice == 2 || settings.SubDialChoice == 6);
+}
+
+// static void smooth_sweep_timer_handler(void *context) {
+//   s_smooth_sweep_timer = NULL;
+
+//   if (settings.SmoothSweep && second_hand_is_active()) {
+//     layer_mark_dirty(s_canvas_second_hand);
+
+//     time_t now_sec;
+//     uint16_t now_ms;
+//     time_ms(&now_sec, &now_ms);
+//     int next_delay = SMOOTH_SWEEP_INTERVAL_MS - (now_ms % SMOOTH_SWEEP_INTERVAL_MS);
+
+//     if (next_delay < 150) {
+//       next_delay += SMOOTH_SWEEP_INTERVAL_MS; // Push to the next slot
+//     }
+
+//     s_smooth_sweep_timer = app_timer_register(next_delay, smooth_sweep_timer_handler, NULL);
+//   }
+// }
+
+static void smooth_sweep_timer_handler(void *context) {
+  s_smooth_sweep_timer = NULL;
+
+  if (settings.SmoothSweep && second_hand_is_active()) {
+    layer_mark_dirty(s_canvas_second_hand);
+
+    // Register fixed interval directly
+    s_smooth_sweep_timer = app_timer_register(SMOOTH_SWEEP_INTERVAL_MS, smooth_sweep_timer_handler, NULL);
+  }
+}
+
+// static void start_smooth_sweep_timer(void) {
+//   if (settings.SmoothSweep && second_hand_is_active() && !s_smooth_sweep_timer) {
+//     s_smooth_sweep_timer = app_timer_register(SMOOTH_SWEEP_INTERVAL_MS, smooth_sweep_timer_handler, NULL);
+//   }
+// }
+
+static void start_smooth_sweep_timer(void) {
+  if (settings.SmoothSweep && second_hand_is_active() && !s_smooth_sweep_timer) {
+    time_t now_sec;
+    uint16_t now_ms;
+    time_ms(&now_sec, &now_ms);
+
+    // Initial phase sync: align ONLY the first tick to the nearest ms interval boundary
+    int initial_delay = SMOOTH_SWEEP_INTERVAL_MS - (now_ms % SMOOTH_SWEEP_INTERVAL_MS);
+    if (initial_delay < 50) {
+      initial_delay += SMOOTH_SWEEP_INTERVAL_MS;
+    }
+
+    s_smooth_sweep_timer = app_timer_register(initial_delay, smooth_sweep_timer_handler, NULL);
+  }
+}
+
+static void stop_smooth_sweep_timer(void) {
+  if (s_smooth_sweep_timer) {
+    app_timer_cancel(s_smooth_sweep_timer);
+    s_smooth_sweep_timer = NULL;
+  }
+}
 
 static void timeout_handler(void *context) {
   showSeconds = false;
+
+  stop_smooth_sweep_timer();
 
   // Unsubscribe from second ticks to save power
     tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
@@ -719,7 +821,7 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
      }
 
   // Only handle if the seconds hand setting is enabled and not already always on
-  if (settings.EnableSecondsHand && settings.SecondsVisibleTime < 135) {
+  if ((settings.SubDialChoice == 2 || settings.SubDialChoice ==6)){ // && settings.SecondsVisibleTime < 135) {
       // If a timer is already running, cancel it
       if (s_timeout_timer) {
         app_timer_cancel(s_timeout_timer);
@@ -733,6 +835,7 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
       }
       
       showSeconds = true;
+      start_smooth_sweep_timer();
       
       // Register a new timer to hide the seconds hand
       s_timeout_timer = app_timer_register(SECONDS_TICK_INTERVAL_MS * settings.SecondsVisibleTime, timeout_handler, NULL);
@@ -752,6 +855,7 @@ static void bluetooth_vibe_icon (bool connected) {
       // Unsubscribe from accel_tap before the vibe
       accel_tap_service_unsubscribe();
       showSeconds = false;
+      stop_smooth_sweep_timer(); 
     }
       #ifdef PBL_PLATFORM_DIORITE
       vibes_short_pulse();
@@ -783,7 +887,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   Tuple *vibe_t = dict_find(iter, MESSAGE_KEY_VibeMode);
   Tuple *dateform_t = dict_find(iter,MESSAGE_KEY_DateFormat);
-  Tuple *enable_seconds_t = dict_find(iter, MESSAGE_KEY_EnableSecondsHand);
+//  Tuple *enable_seconds_t = dict_find(iter, MESSAGE_KEY_EnableSecondsHand);
   Tuple *always_sub_t = dict_find(iter, MESSAGE_KEY_AlwaysShowSubDial);
   Tuple *enable_secondsvisible_t = dict_find(iter, MESSAGE_KEY_SecondsVisibleTime);
   Tuple *seconds_color_t = dict_find(iter, MESSAGE_KEY_SecondsHandColor);
@@ -791,7 +895,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *monthhand_color_t = dict_find(iter, MESSAGE_KEY_MonthHandColor);
   Tuple *bwmonthhand_color_t = dict_find(iter, MESSAGE_KEY_BWMonthHandColor);
   Tuple *enable_date_t = dict_find(iter, MESSAGE_KEY_EnableDate);
-  Tuple *enable_month_t = dict_find(iter, MESSAGE_KEY_EnableMonth);
+//  Tuple *enable_month_t = dict_find(iter, MESSAGE_KEY_EnableMonth);
   Tuple *enable_battery_t = dict_find(iter, MESSAGE_KEY_EnableBattery);
   Tuple *enable_battery_line_t = dict_find(iter, MESSAGE_KEY_EnableBatteryLine);
   Tuple *enable_logo_t = dict_find(iter, MESSAGE_KEY_EnableLogo);
@@ -832,6 +936,61 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   Tuple *subdial_t = dict_find(iter, MESSAGE_KEY_SubDialColor);
   Tuple *bwsubdial_t = dict_find(iter, MESSAGE_KEY_BWSubDialColor);
+  Tuple *roman_t = dict_find(iter, MESSAGE_KEY_Roman);
+
+  //Tuple *tzmode_t = dict_find(iter, MESSAGE_KEY_TZ_MODE);
+  Tuple *subdialchoice_t = dict_find(iter,MESSAGE_KEY_SubDialChoice);
+  Tuple *tzid_t = dict_find(iter, MESSAGE_KEY_TZ_ID);
+  Tuple *tzoffset_t = dict_find(iter, MESSAGE_KEY_TZ_OFFSET);
+  Tuple *remoteampm_t = dict_find(iter, MESSAGE_KEY_showremoteAMPM);
+
+  Tuple *smoothsweep_t = dict_find(iter, MESSAGE_KEY_SmoothSweep);
+
+  if (smoothsweep_t) {
+      settings.SmoothSweep = smoothsweep_t->value->int32 == 1;
+     // layer_mark_dirty(s_canvas_tz);
+     // layer_mark_dirty(s_canvas_comp_bg);
+     // layer_mark_dirty(s_canvas_second_hand);
+     // layer_mark_dirty(s_canvas_month_hand);
+   }
+
+  if (subdialchoice_t) {
+      int value = atoi(subdialchoice_t->value->cstring);
+      if (value >= 0 && value <= 6) {
+        settings.SubDialChoice = value;
+      }
+      layer_mark_dirty(s_canvas_tz);
+      layer_mark_dirty(s_canvas_comp_bg);
+      layer_mark_dirty(s_canvas_second_hand);
+      layer_mark_dirty(s_canvas_month_hand);
+   }
+
+
+  if (remoteampm_t) {
+  settings.showremoteAMPM = remoteampm_t->value->int32 == 1;
+  layer_mark_dirty(s_canvas_tz);
+  layer_mark_dirty(s_canvas_comp_bg);
+  }
+
+  if(tzid_t) {
+  settings.tz_id = (int)tzid_t->value->int32;
+  time_t now = time(NULL);
+  tick_handler(localtime(&now), MINUTE_UNIT);
+  // layer_mark_dirty(g_layer);
+  }
+
+  if(tzoffset_t) {
+  settings.tz_offset = (int)tzoffset_t->value->int32;
+    if (settings.tz_offset != -1) {
+    update_offset_vars(settings.tz_offset);
+    }
+  //update_offset_vars(settings.tz_offset);
+  time_t now = time(NULL);
+  struct tm *tick_time = localtime(&now);
+  tick_handler(tick_time, MINUTE_UNIT);
+  layer_mark_dirty(s_canvas_tz);
+  layer_mark_dirty(s_canvas_comp_bg);
+  }
 
   ////////Weather
   // Tuple * uvarccol_t = dict_find(iter,MESSAGE_KEY_UVArcColor);
@@ -857,6 +1016,12 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   //   }
   //   settings_changed = true;
   // }
+
+   if (roman_t) {
+    settings.Roman = roman_t->value->int32 == 1;
+    layer_mark_dirty(s_canvas_layer);
+    layer_mark_dirty(s_date_battery_logo_layer);
+  }
 
   if (fg_shape_t) {
     settings.ForegroundShape = fg_shape_t->value->int32 == 1;
@@ -939,17 +1104,17 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     layer_mark_dirty(s_canvas_second_hand);
   }
 
-  if (enable_seconds_t) {
-    settings.EnableSecondsHand = enable_seconds_t->value->int32 == 1;
-    // Unsubscribe from any existing tick services
-    tick_timer_service_unsubscribe();
-    accel_tap_service_unsubscribe();
-    // Always subscribe to MINUTE_UNIT by default for efficiency
-    tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
-    layer_mark_dirty(s_canvas_comp_bg);
-    layer_mark_dirty(s_canvas_month_hand);
-    layer_mark_dirty(s_canvas_second_hand);
-  }
+  // if (enable_seconds_t) {
+  //   settings.EnableSecondsHand = enable_seconds_t->value->int32 == 1;
+  //   // Unsubscribe from any existing tick services
+  //   tick_timer_service_unsubscribe();
+  //   accel_tap_service_unsubscribe();
+  //   // Always subscribe to MINUTE_UNIT by default for efficiency
+  //   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
+  //   layer_mark_dirty(s_canvas_comp_bg);
+  //   layer_mark_dirty(s_canvas_month_hand);
+  //   layer_mark_dirty(s_canvas_second_hand);
+  // }
 
   if (vibe_t) {
     strncpy(settings.VibeMode, vibe_t->value->cstring, sizeof(settings.VibeMode)); 
@@ -977,12 +1142,12 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     layer_mark_dirty(s_date_battery_logo_layer);
   }
 
-  if (enable_month_t) {
-    settings.EnableMonth = enable_month_t->value->int32 == 1;
-    layer_mark_dirty(s_canvas_comp_bg);
-    layer_mark_dirty(s_canvas_month_hand);
-    layer_mark_dirty(s_canvas_second_hand);
-  }
+  // if (enable_month_t) {
+  //   settings.EnableMonth = enable_month_t->value->int32 == 1;
+  //   layer_mark_dirty(s_canvas_comp_bg);
+  //   layer_mark_dirty(s_canvas_month_hand);
+  //   layer_mark_dirty(s_canvas_second_hand);
+  // }
 
   if (enable_logo_t) {
     settings.EnableLogo = enable_logo_t->value->int32 == 1;
@@ -1023,28 +1188,29 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     }
 
     // Handle "Always On" vs. "Timeout" behavior for the seconds hand
-    if (settings.SecondsVisibleTime == 135) {
+    if (settings.SubDialChoice == 1 ) {
       // "Always On" logic: show seconds, and don't register a timer
       showSeconds = true;
-      if (settings.EnableSecondsHand) {
+      start_smooth_sweep_timer();
         tick_timer_service_unsubscribe();
         tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
         // Unsubscribe from accel_tap_service as it's not needed
         accel_tap_service_unsubscribe();
-      }
-    } else if (settings.SecondsVisibleTime > 0) {
+
+    } else if (settings.SubDialChoice == 2 || settings.SubDialChoice == 6) {
       // "Timeout" logic: start with seconds shown, register a timer
       showSeconds = true;
-      if (settings.EnableSecondsHand) {
+      start_smooth_sweep_timer();
         tick_timer_service_unsubscribe();
         tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
         s_timeout_timer = app_timer_register(SECONDS_TICK_INTERVAL_MS * settings.SecondsVisibleTime, timeout_handler, NULL);
         // Subscribe to accel_tap_service to reset the timer
         accel_tap_service_subscribe(accel_tap_handler);
       }
-    } else {
+     else {
       // "Disabled" logic: don't show seconds, ensure on minute ticks
       showSeconds = false;
+      stop_smooth_sweep_timer();
       tick_timer_service_unsubscribe();
       tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
       // Unsubscribe from accel_tap_service
@@ -1428,9 +1594,12 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   
+  #ifdef DEBUG
   APP_LOG(APP_LOG_LEVEL_DEBUG, "tick_handler fired: %02d:%02d", tick_time->tm_hour, tick_time->tm_min);
+  #endif
 
   time_t temp = time(NULL);
+  g_current_epoch = temp;
   prv_tick_time = localtime(&temp);
 
   // Update hour and minute hands and the date on minute change
@@ -1440,7 +1609,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     s_hours = tick_time->tm_hour;
     layer_mark_dirty(s_canvas_layer);
     layer_mark_dirty(s_date_battery_logo_layer);
-    if(settings.EnableMonth && tick_time->tm_mon != s_month){
+    if((settings.SubDialChoice == 3 || settings.SubDialChoice == 6) && tick_time->tm_mon != s_month){
       s_month = tick_time->tm_mon;
     }
     if (settings.EnableDate && tick_time->tm_mday != current_date) {
@@ -1452,7 +1621,9 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 // Update seconds hand on second change, but only if it's visible
   if (showSeconds && (units_changed & SECOND_UNIT)) {
     seconds = tick_time->tm_sec;
-    layer_mark_dirty(s_canvas_second_hand);
+    if (!settings.SmoothSweep){
+      layer_mark_dirty(s_canvas_second_hand);
+    }
   }
 
   // hide or show the seconds hand layer
@@ -1627,7 +1798,8 @@ static void draw_second_hand(GContext *ctx, int angle, int length, int back_leng
   GColor shadow_color = PBL_IF_BW_ELSE(settings.BWMinuteHandShadowColor,settings.MinuteHandShadowColor);
  
   // Set the antialiasing
-  graphics_context_set_antialiased(ctx, true);
+  graphics_context_set_antialiased(ctx, !settings.SmoothSweep);
+  // graphics_context_set_antialiased(ctx, true);
  
   // Draw the shadow for the second hand centre, with a small offset
 
@@ -1674,6 +1846,9 @@ static void draw_second_hand(GContext *ctx, int angle, int length, int back_leng
   graphics_context_set_stroke_width(ctx, settings.MinuteHandThickness);
   graphics_draw_line(ctx, p1, p2);
 
+  #ifdef DEBUG
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "second hand draw fired");
+  #endif    
 }
 
 static void draw_seconds_center(GContext *ctx, GColor minutes_color, GColor seconds_color) {
@@ -2017,6 +2192,24 @@ static void draw_minor_tick(GContext *ctx, int angle, GColor border_color) {
   graphics_draw_line(ctx, p1, p2);
 }
 
+///////Roman numerals option
+static void get_digit_string(int i, bool roman, char *out, size_t out_size) {
+  if (roman) {
+    switch (i) {
+      case 2: snprintf(out, out_size, "II"); break;
+      case 4: snprintf(out, out_size, "IIII"); break;
+      case 6: snprintf(out, out_size, "VI"); break;
+      case 8: snprintf(out, out_size, "VIII"); break;
+      case 10: snprintf(out, out_size, "X"); break;
+      case 12: snprintf(out, out_size, "XII"); break;
+      default: snprintf(out, out_size, "%d", i); break;
+    }
+  } else {
+    snprintf(out, out_size, "%d", i);
+  }
+}
+//////////////////
+
 
 #ifdef PBL_PLATFORM_APLITE //DON'T use FCTX a second time on Aplite: also use on Diorite and Flint as fctx is less efficient
 static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
@@ -2026,9 +2219,14 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   GRect TwelveRect = GRect(1,6,bounds.size.w, 28);
   GRect SixRect = GRect(1,bounds.size.h-28-11,bounds.size.w, 28);
   graphics_context_set_text_color(ctx, settings.BWHourDigitsColor);
-  graphics_draw_text(ctx, "12", FontHour, TwelveRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+  //graphics_draw_text(ctx, "12", FontHour, TwelveRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+  // if(!settings.EnableDate){
+  //   graphics_draw_text(ctx, "6", FontHour, SixRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+  // }
+
+  graphics_draw_text(ctx, settings.Roman ? "XII" : "12", FontHour, TwelveRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
   if(!settings.EnableDate){
-    graphics_draw_text(ctx, "6", FontHour, SixRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    graphics_draw_text(ctx, settings.Roman ? "VI" : "6", FontHour, SixRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
   }
 
 
@@ -2170,9 +2368,9 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
      for (int i = 1; i < 13; i++) {
       if (i % 2 == 0){
         fctx_begin_fill(&fctx);
-        fctx_set_text_em_height(&fctx, FCTX_Font, config.font_size_digits* bounds.size.h/full_bounds.size.h);
+        fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
         fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
-        char digit_string[3];
+        char digit_string[6];
         int32_t digit_angle = i * 30 ;
         int32_t digit_angle_trig = (TRIG_MAX_ANGLE * digit_angle) / 360;
         int32_t digit_rotation; // = digit_angle_trig; // if you want rotation to match position angle
@@ -2184,9 +2382,10 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
               digit_rotation = digit_angle_trig + TRIG_MAX_ANGLE / 2;
             }
 
-        fixed_t text_radius = INT_TO_FIXED((bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset);
+        fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
         
-        snprintf(digit_string, sizeof digit_string, "%d", i);
+        //snprintf(digit_string, sizeof digit_string, "%d", i);
+        get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
         FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
         FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
        // FPoint p = clockToCartesian(center_digits, text_radius, digit_angle);
@@ -2202,9 +2401,9 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
        for (int i = 1; i < 13; i++) {
       if (i % 2 == 0 && i != 6){
         fctx_begin_fill(&fctx);
-        fctx_set_text_em_height(&fctx, FCTX_Font, config.font_size_digits* bounds.size.h/full_bounds.size.h);
+        fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
         fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
-        char digit_string[3];
+        char digit_string[6];
         int32_t digit_angle = i * 30 ;
         int32_t digit_angle_trig = (TRIG_MAX_ANGLE * digit_angle) / 360;
         int32_t digit_rotation; // = digit_angle_trig; // if you want rotation to match position angle
@@ -2216,9 +2415,10 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
               digit_rotation = digit_angle_trig + TRIG_MAX_ANGLE / 2;
             }
 
-        fixed_t text_radius = INT_TO_FIXED((bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
+        fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
         
-        snprintf(digit_string, sizeof digit_string, "%d", i);
+        //snprintf(digit_string, sizeof digit_string, "%d", i);
+        get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
         FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
         FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
        // FPoint p = clockToCartesian(center_digits, text_radius, digit_angle);
@@ -2409,8 +2609,12 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 // Update procedure for the seconds hand layer
 static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
     
-    if(!settings.EnableSecondsHand){
-      return;
+    // if(!settings.EnableSecondsHand){
+    //   return;
+    // }
+    
+    if (settings.SubDialChoice != 1 && settings.SubDialChoice != 2 && settings.SubDialChoice != 6) {
+    return;
     }
 
     if ((!showSeconds && !settings.AlwaysShowSubDial) || !prv_tick_time) {
@@ -2426,16 +2630,30 @@ static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
     }
   
 
-  seconds = prv_tick_time->tm_sec;
-  //for test & screenshots
-  //int
-  // seconds = 8;
+  // seconds = prv_tick_time->tm_sec;
+  // //for test & screenshots
+  // //int
+  // // seconds = 8;
 
-  // if (!settings.EnableSecondsHand || !showSeconds) {
-  //   seconds = 0;
-  // }
+  // // if (!settings.EnableSecondsHand || !showSeconds) {
+  // //   seconds = 0;
+  // // }
 
-  int seconds_angle = ((double)seconds / 60 * 360) - 90;
+  // int seconds_angle = ((double)seconds / 60 * 360) - 90;
+
+    int seconds_angle;
+
+    if (settings.SmoothSweep) {
+      time_t sweep_epoch;
+      uint16_t sweep_ms;
+      time_ms(&sweep_epoch, &sweep_ms);
+      struct tm *sweep_time = localtime(&sweep_epoch);
+      seconds = sweep_time->tm_sec;
+      seconds_angle = (seconds * 6) + ((sweep_ms * 6) / 1000) - 90;
+    } else {
+      seconds = prv_tick_time->tm_sec;
+      seconds_angle = (seconds * 6) - 90;
+    }
 
  // draw_seconds_month_background(ctx);
   draw_second_hand(ctx, seconds_angle, config.second_hand_a, config.second_hand_b,  PBL_IF_BW_ELSE(settings.BWSecondsHandColor, settings.SecondsHandColor));
@@ -2445,7 +2663,12 @@ static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
 static void layer_update_proc_complication(Layer *layer, GContext *ctx) {
 
   
-    if(!settings.EnableMonth && !settings.EnableSecondsHand && !settings.AlwaysShowSubDial){
+    // if(!settings.EnableMonth && !settings.EnableSecondsHand && !settings.AlwaysShowSubDial){
+    //   return;
+    // }
+
+    if ((settings.SubDialChoice != 3 && 
+    settings.SubDialChoice != 1 && settings.SubDialChoice != 2 && settings.SubDialChoice != 6)) {
       return;
     }
 
@@ -2467,10 +2690,9 @@ static void layer_update_proc_complication(Layer *layer, GContext *ctx) {
 
 static void layer_update_proc_month_hand(Layer *layer, GContext *ctx) {
 
-    if(!settings.EnableMonth){
+    if(settings.SubDialChoice != 3 && settings.SubDialChoice != 6){
     return;
-  
-    }
+      }
 
    GRect bounds = layer_get_unobstructed_bounds(layer);
    GRect full_bounds = layer_get_bounds(layer);
@@ -2480,11 +2702,75 @@ static void layer_update_proc_month_hand(Layer *layer, GContext *ctx) {
     }
        //month = prv_tick_time->tm_mon;
     int month = s_month + 1;    
+  
     int month_angle = ((double)month / 12 * 360) - 90;
+
 
     draw_seconds_month_background(ctx);
     draw_month_hand(ctx, month_angle, config.second_hand_a, config.second_hand_b,  PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
-    draw_seconds_center(ctx,  PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1), PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
+   draw_seconds_center(ctx,  PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1), PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
+
+}
+
+static void layer_update_proc_tz(Layer *layer, GContext *ctx) {
+
+    if(settings.SubDialChoice != 5 ){
+    return;
+      }
+
+    GRect bounds = layer_get_unobstructed_bounds(layer);
+    GRect full_bounds = layer_get_bounds(layer);
+
+      if (!grect_equal(&full_bounds, &bounds)) {
+        return;
+      }
+
+      // Apply the second timezone's UTC offset (settings.tz_offset, in seconds) to the current UTC epoch time, then break it down with gmtime().
+      // time_t remote_epoch = time(NULL) + settings.tz_offset;
+      // g_remote_time = *gmtime(&remote_epoch);
+
+      time_t remote_epoch = g_current_epoch + settings.tz_offset;
+      g_remote_time = *gmtime(&remote_epoch);
+
+      bool remote_pm = g_remote_time.tm_hour >= 12;
+      int remotehour = g_remote_time.tm_hour % 12;
+      int remoteminute = g_remote_time.tm_min;
+
+      // int hour_angle = (((double)remotehour + (double)remoteminute / 60) / 12 * 360) - 90;
+      // int minute_angle = ((double)remoteminute / 60 * 360) - 90;
+
+      int hour_angle = ((remotehour * 60 + remoteminute) * 30) / 60 - 90;
+      int minute_angle = (remoteminute * 6) - 90;
+
+      GPoint hand_origin = GPoint(config.seconds_circle_centre_x, config.seconds_circle_centre_y);
+
+     draw_seconds_month_background(ctx);
+    
+     if (remoteminute != prv_tick_time->tm_min) {
+      draw_month_hand(ctx, hour_angle, config.second_hand_a * 3/4, config.second_hand_b,  PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
+      if (remote_pm && settings.showremoteAMPM) {
+        GPoint pm_dot = polar_to_point_offset(hand_origin, hour_angle, (config.second_hand_a * 3/4)/2);
+        graphics_context_set_fill_color(ctx, PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
+        graphics_fill_circle(ctx, pm_dot, settings.MinuteHandThickness*1.5);
+      }
+     }
+     else{
+      draw_month_hand(ctx, hour_angle, config.second_hand_a , config.second_hand_b,  PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
+      draw_seconds_center(ctx,  PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1), PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
+      if (remote_pm && settings.showremoteAMPM) {
+        GPoint pm_dot = polar_to_point_offset(hand_origin, hour_angle, (config.second_hand_a)/2);
+        graphics_context_set_fill_color(ctx, PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
+        graphics_fill_circle(ctx, pm_dot, settings.MinuteHandThickness*1.5);
+      }
+     }
+    
+ 
+     if (remoteminute != prv_tick_time->tm_min) {
+       draw_second_hand(ctx, minute_angle, config.second_hand_a, config.second_hand_b,  PBL_IF_BW_ELSE(settings.BWSecondsHandColor, settings.SecondsHandColor));
+       draw_seconds_center(ctx,  PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1), PBL_IF_BW_ELSE(settings.BWSecondsHandColor, settings.SecondsHandColor)); 
+      }
+     
+     
 
 }
 
@@ -2756,6 +3042,7 @@ static void prv_window_load(Window *window) {
   #endif
 
   time_t temp = time(NULL);
+  g_current_epoch = temp;
   prv_tick_time = localtime(&temp);
   current_date = prv_tick_time->tm_mday;
   s_weekday = prv_tick_time->tm_wday;
@@ -2786,25 +3073,47 @@ static void prv_window_load(Window *window) {
   });
 
    // Subscribe to the correct tick service based on settings
-    if (settings.EnableSecondsHand) {
-        if (settings.SecondsVisibleTime == 135) {
+    // if (settings.EnableSecondsHand) {
+    //     if (settings.SecondsVisibleTime == 135) {
+    //     tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+    //     } else {
+    //     tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+    //     s_timeout_timer = app_timer_register(1000*settings.SecondsVisibleTime, timeout_handler,NULL);
+    //     accel_tap_service_subscribe(accel_tap_handler);
+    //     }
+    // }
+    // else {
+    // tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
+    // }
+    //showSeconds = settings.EnableSecondsHand;
+
+    // showSeconds = (settings.SubDialChoice == 1 || settings.SubDialChoice == 2 || settings.SubDialChoice == 6);
+    // if (showSeconds) {
+        if (settings.SubDialChoice == 1) {
+        showSeconds = true;
+        start_smooth_sweep_timer();
         tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
-        } else {
+        } else if (settings.SubDialChoice == 2 || settings.SubDialChoice == 6){
+        showSeconds = true;
+        start_smooth_sweep_timer();
         tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
         s_timeout_timer = app_timer_register(1000*settings.SecondsVisibleTime, timeout_handler,NULL);
         accel_tap_service_subscribe(accel_tap_handler);
         }
-    }
-    else {
-    tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
-    }
-    showSeconds = settings.EnableSecondsHand;
+        else {
+        showSeconds = false;
+        stop_smooth_sweep_timer();
+        tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
+        }
+        //showSeconds = (settings.SubDialChoice == 1 || settings.SubDialChoice == 2 || settings.SubDialChoice == 6);
+
    
   //create layers
   s_bg_layer = layer_create(bounds);
   s_dial_layer = layer_create(bounds);
   s_canvas_second_hand = layer_create(bounds);
   s_canvas_month_hand = layer_create(bounds);
+  s_canvas_tz = layer_create(bounds);
   s_canvas_comp_bg = layer_create(bounds);
   s_canvas_qt_icon = layer_create(bounds);
      quiet_time_icon();
@@ -2824,6 +3133,7 @@ static void prv_window_load(Window *window) {
   layer_add_child(window_layer, s_canvas_comp_bg);
   layer_add_child(window_layer, s_canvas_month_hand);  //month hand
   layer_add_child(window_layer, s_canvas_second_hand);  //second hand
+  layer_add_child(window_layer, s_canvas_tz);  //2nd timezone
   layer_add_child(window_layer, s_canvas_bt_icon);
   layer_add_child(window_layer, s_canvas_qt_icon);
   layer_add_child(window_layer, s_date_battery_logo_layer); //fctx version of text
@@ -2841,6 +3151,7 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_canvas_comp_bg,layer_update_proc_complication);
   layer_set_update_proc(s_canvas_second_hand, layer_update_proc_seconds_hand);
   layer_set_update_proc(s_canvas_month_hand, layer_update_proc_month_hand);
+  layer_set_update_proc(s_canvas_tz, layer_update_proc_tz);
 
 }
 
@@ -2859,6 +3170,7 @@ static void prv_window_unload(Window *window) {
   layer_destroy(s_dial_layer);
   layer_destroy(s_canvas_second_hand);
   layer_destroy(s_canvas_month_hand);
+  layer_destroy(s_canvas_tz);
   layer_destroy(s_canvas_comp_bg);
   layer_destroy(s_canvas_battery);
   layer_destroy(s_canvas_bt_icon);

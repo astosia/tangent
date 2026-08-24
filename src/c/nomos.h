@@ -2,7 +2,7 @@
 #include <pebble.h>
 
 // #define MODEL_COUNT 9
-#define SETTINGS_KEY 133
+#define SETTINGS_KEY 136
 
 // typedef struct DialSpec {
 //   GPoint markers[12];
@@ -116,4 +116,13 @@ typedef struct ClaySettings {
   GColor UVArcColor;
   GColor WeatherColor;
   bool AlwaysShowSubDial;
+  bool Roman;
+  bool showremoteAMPM;
+  int RemoteTimeOffsetMinutes;
+  bool tz_mode;
+  int tz_id;
+  int tz_offset;
+  char tz_code[7];
+  int SubDialChoice;
+  bool SmoothSweep;
 } __attribute__((__packed__)) ClaySettings;
