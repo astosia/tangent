@@ -3,6 +3,7 @@
 #include "utils/weekday.h"
 #include "utils/month.h"
 #include "utils/MathUtils.h"
+#include "utils/Weather.h"
 #include <pebble-fctx/fctx.h>
 #include <pebble-fctx/fpath.h>
 #include <pebble-fctx/ffont.h>
@@ -18,6 +19,8 @@
   #define SMOOTH_SWEEP_INTERVAL_MS 200
 #endif
 
+
+
 // Main window and layers
 static Window *s_window;
 static Layer *s_canvas_layer;
@@ -32,11 +35,12 @@ static Layer *s_canvas_comp_bg;
 static Layer *s_canvas_bt_icon;
 static Layer *s_canvas_qt_icon;
 static Layer *s_canvas_battery;
+#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+static Layer *s_canvas_weather;
+#endif
 
 struct tm g_local_time;
 struct tm g_remote_time; //second timezone settings
-
-//static Layer *s_canvas_weather;
 
 // Fonts
 static GFont
@@ -47,6 +51,11 @@ static GFont
     FontHour,
     #endif
     FontBTQTIcons;
+
+#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+static GFont
+    FontWeatherIcons;
+#endif
 
 FFont* FCTX_Font;
 // Time and date variables
@@ -60,10 +69,10 @@ static int s_hours; //24h version
 static int s_month;
 static int seconds;
 static bool showSeconds;
-
-//static int s_countdown = 30;
+#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+static int s_countdown = 30;
 //static int showWeather = 0;
-
+#endif
 static ClaySettings settings;
 
 
@@ -156,6 +165,12 @@ typedef struct {
   GRect battery_arc_bounds[1];
   GRect battery_arc_bounds_centre[1];
   int romanadjust;
+  GRect IconNowRect[1];
+  GRect IconNowRect2[1];
+  GRect TempRect[1];
+  GRect TempForeRect[1];
+  GRect RainIconRect[1];
+  GRect WarningIconRect[1];
 } UIConfig;
 
 #ifdef PBL_PLATFORM_EMERY
@@ -176,12 +191,12 @@ static const UIConfig config = {
 .WeekdayWidth = 38,
 .DateWidth = 22,
 .WeekdayDateHeight = 13,
-.BTIconYOffset = -21,
-.QTIconYOffset = 21,
-.BatteryYOffset = 53-4 +3-1-2,
+.BTIconYOffset = -21-45-12-2,
+.QTIconYOffset = 21+45+12+2,
+.BatteryYOffset = 53-4 +3-1-2 + 2 +2,
 .BatteryYOffset2 = -9,
 .BatteryYOffset3 = -9,
-.BatteryLineYOffset = 66 + 6,
+.BatteryLineYOffset = 66 + 6 + 4 + 2,
 .BatteryLineYOffset2 = -8+114,
 .LogoXOffset = 10,
 .LogoYOffset = 69+1,
@@ -196,8 +211,8 @@ static const UIConfig config = {
 .six_pos_y = -40 + 9,
 .twelve_pos_x = - 2 + 1,
 .twelve_pos_y = -3,
-.battery_pos_z = -2,
-.battery_pos_y = 4,
+.battery_pos_z = -2+2,
+.battery_pos_y = 4+2,
 .battery_line = 63, //sized to the width of the default logo 
 .analogue_hand_a = 1,  //was 20
 .analogue_hand_b = 0,  //was28
@@ -207,9 +222,9 @@ static const UIConfig config = {
 .circle_radius_adj = 18,
 .tick_mask_radius_adj = 12,
 .hands_shadow = 2,
-.QTIconXOffset2 = 10,
+.QTIconXOffset2 = 10-22,
 .QTIconYOffset2 = 0,
-.BTIconXOffset2 = 10,
+.BTIconXOffset2 = 10+25,
 .BTIconYOffset2 = 0,
 .corner_radius_minutehand = 20,
 .corner_radius_hourhand = 10,
@@ -244,7 +259,13 @@ static const UIConfig config = {
   .UVDayValueRect = {{{57,97},{25,25}}},     //UVI value daily forecast max
   .battery_arc_bounds = {{{51,98},{37,37}}},        //UV arc, right of centre, middle row
   .battery_arc_bounds_centre = {{{49,96},{41,41}}},    //UVI daily forecast maximum
-.romanadjust = 2
+.romanadjust = 2,
+.IconNowRect = {{{0,46+2},{98,22}}},
+.IconNowRect2 = {{{0,50+2},{98,22}}},
+.TempRect = {{{102,48+2},{98,22}}},
+.TempForeRect = {{{0,74+2},{200,22}}},
+.RainIconRect = {{{58-7-7+2,72-23+29+2+1},{40,22}}},
+.WarningIconRect = {{{58-7-7,72-23+29+2},{40,22}}}
 };
 #elif defined(PBL_PLATFORM_GABBRO)
 static const UIConfig config = {
@@ -264,12 +285,12 @@ static const UIConfig config = {
 .WeekdayWidth = 38,
 .DateWidth = 22,
 .WeekdayDateHeight = 13,
-.BTIconYOffset = -21,
-.QTIconYOffset = 21,
-.BatteryYOffset = 53-4 +3-1 + 11 - 2,
+.BTIconYOffset = -21 -67,
+.QTIconYOffset = 21 + 67,
+.BatteryYOffset = 53-4 +3-1 + 11 - 2 + 2 + 2,
 .BatteryYOffset2 = -9,
 .BatteryYOffset3 = -1,
-.BatteryLineYOffset = 66 + 6 + 11,
+.BatteryLineYOffset = 66 + 6 + 11 + 4 ,
 .BatteryLineYOffset2 = -8+130,
 .LogoXOffset = 22,
 .LogoYOffset = 69+1+1,
@@ -294,9 +315,9 @@ static const UIConfig config = {
 .circle_radius_adj = 17,
 .tick_mask_radius_adj = 12,
 .hands_shadow = 2,
-.QTIconXOffset2 = 10,
+.QTIconXOffset2 = 10-16,
 .QTIconYOffset2 = 0,
-.BTIconXOffset2 = 10,
+.BTIconXOffset2 = 10+20,
 .BTIconYOffset2 = 0,
 .analogue_hand_c = 1,
 .outertickinset = 6,
@@ -322,7 +343,13 @@ static const UIConfig config = {
   .UVDayValueRect = {{{57+29,98+13},{25,25}}},     //UVI value daily forecast max
   .battery_arc_bounds = {{{51+29,99+13},{37,37}}},        //UV arc, right of centre, middle row
   .battery_arc_bounds_centre = {{{49+29,97+13},{41,41}}},    //UVI daily forecast maximum
-.romanadjust = 0
+.romanadjust = 0,
+.IconNowRect = {{{0,60},{128,22}}},
+.IconNowRect2 = {{{0,64},{128,22}}},
+.TempRect = {{{132,60},{128,22}}},
+.TempForeRect = {{{0,88},{260,22}}},
+.RainIconRect = {{{75,90},{40,22}}},
+.WarningIconRect = {{{260-75,90},{40,22}}}
 };
 #elif defined(PBL_BW)
 static const UIConfig config = {
@@ -604,6 +631,9 @@ static void prv_load_settings(void);
 static void prv_inbox_received_handler(DictionaryIterator *iter, void *context);
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed);
 static void bg_update_proc(Layer *layer, GContext *ctx);
+#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+static void weather_update_proc(Layer *layer, GContext *ctx);
+#endif
 static void update_logo_date_battery_fctx_layer(Layer *layer, GContext * ctx);
 static void layer_update_proc_battery_line(Layer *layer, GContext * ctx);
 static void layer_update_proc_seconds_hand(Layer *layer, GContext * ctx);
@@ -638,7 +668,7 @@ static void prv_default_settings(void) {
   settings.EnableBattery = true;
   settings.EnableBatteryLine = true;
   settings.EnableLogo = false;
-  snprintf(settings.LogoText, sizeof(settings.LogoText), "%s", "tangent");
+ // snprintf(settings.LogoText, sizeof(settings.LogoText), "%s", "tangent");
   settings.BackgroundColor1 = GColorOxfordBlue;
   settings.SubDialColor = GColorOxfordBlue;
   settings.MinuteHandShadowColor = GColorBlack;
@@ -690,14 +720,18 @@ static void prv_default_settings(void) {
   settings.tz_id = 0;
   settings.tz_offset = 0;
   settings.SmoothSweep = false;
+//  settings.BacklightInteraction = false;
 
-////////Weather
-  // settings.UVMaxColor = GColorWhite;
-  // settings.UVNowColor = PBL_IF_BW_ELSE(GColorWhite,GColorRed);
-  // settings.UVArcColor = GColorLightGray;
-  // settings.UseWeather = false;
-  // settings.UpSlider = 30;
-  // settings.WeatherUnit = 0;
+  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+
+  settings.UseWeather = false;
+  settings.UpSlider = 30;
+  settings.WeatherUnit = 0;
+  settings.RainSoon = false;
+
+  #endif
+
+
   
 }
 
@@ -737,24 +771,7 @@ static bool second_hand_is_active(void) {
          (settings.SubDialChoice == 1 || settings.SubDialChoice == 2 || settings.SubDialChoice == 6);
 }
 
-// static void smooth_sweep_timer_handler(void *context) {
-//   s_smooth_sweep_timer = NULL;
 
-//   if (settings.SmoothSweep && second_hand_is_active()) {
-//     layer_mark_dirty(s_canvas_second_hand);
-
-//     time_t now_sec;
-//     uint16_t now_ms;
-//     time_ms(&now_sec, &now_ms);
-//     int next_delay = SMOOTH_SWEEP_INTERVAL_MS - (now_ms % SMOOTH_SWEEP_INTERVAL_MS);
-
-//     if (next_delay < 150) {
-//       next_delay += SMOOTH_SWEEP_INTERVAL_MS; // Push to the next slot
-//     }
-
-//     s_smooth_sweep_timer = app_timer_register(next_delay, smooth_sweep_timer_handler, NULL);
-//   }
-// }
 
 static void smooth_sweep_timer_handler(void *context) {
   s_smooth_sweep_timer = NULL;
@@ -887,7 +904,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   Tuple *vibe_t = dict_find(iter, MESSAGE_KEY_VibeMode);
   Tuple *dateform_t = dict_find(iter,MESSAGE_KEY_DateFormat);
-//  Tuple *enable_seconds_t = dict_find(iter, MESSAGE_KEY_EnableSecondsHand);
+
   Tuple *always_sub_t = dict_find(iter, MESSAGE_KEY_AlwaysShowSubDial);
   Tuple *enable_secondsvisible_t = dict_find(iter, MESSAGE_KEY_SecondsVisibleTime);
   Tuple *seconds_color_t = dict_find(iter, MESSAGE_KEY_SecondsHandColor);
@@ -895,11 +912,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *monthhand_color_t = dict_find(iter, MESSAGE_KEY_MonthHandColor);
   Tuple *bwmonthhand_color_t = dict_find(iter, MESSAGE_KEY_BWMonthHandColor);
   Tuple *enable_date_t = dict_find(iter, MESSAGE_KEY_EnableDate);
-//  Tuple *enable_month_t = dict_find(iter, MESSAGE_KEY_EnableMonth);
+
   Tuple *enable_battery_t = dict_find(iter, MESSAGE_KEY_EnableBattery);
   Tuple *enable_battery_line_t = dict_find(iter, MESSAGE_KEY_EnableBatteryLine);
-  Tuple *enable_logo_t = dict_find(iter, MESSAGE_KEY_EnableLogo);
-  Tuple *logotext_t = dict_find(iter, MESSAGE_KEY_LogoText);
+
   Tuple *bwthemeselect_t = dict_find(iter, MESSAGE_KEY_BWThemeSelect);
   Tuple *themeselect_t = dict_find(iter, MESSAGE_KEY_ThemeSelect);
   Tuple *bg_color1_t = dict_find(iter, MESSAGE_KEY_BackgroundColor1);
@@ -945,6 +961,69 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *remoteampm_t = dict_find(iter, MESSAGE_KEY_showremoteAMPM);
 
   Tuple *smoothsweep_t = dict_find(iter, MESSAGE_KEY_SmoothSweep);
+
+  //Tuple *backlight_t = dict_find(iter, MESSAGE_KEY_BacklightInteraction);
+
+  ///////Weather
+  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  Tuple * useweather_t = dict_find(iter, MESSAGE_KEY_UseWeather);
+  Tuple * frequpdate = dict_find(iter, MESSAGE_KEY_UpSlider);
+
+  Tuple * wtemp_t = dict_find(iter, MESSAGE_KEY_WeatherTemp);
+  Tuple * iconnow_tuple = dict_find(iter, MESSAGE_KEY_IconNow);
+  Tuple * wforetemp_t = dict_find(iter, MESSAGE_KEY_TempFore);
+  Tuple * rainsoon_t = dict_find(iter, MESSAGE_KEY_RainSoon);
+  //Tuple * rainamount_t = dict_find(iter, MESSAGE_KEY_RainAmount);
+  
+ 
+
+
+  if (useweather_t) {
+    settings.UseWeather = useweather_t->value->int32 != 0;
+    settings_changed = true;
+  }
+
+  if (frequpdate){
+    settings.UpSlider = (int) frequpdate -> value -> int32;
+    //Restart the counter
+    s_countdown = settings.UpSlider;
+     settings_changed = true;
+  }
+
+  if (wtemp_t){
+  snprintf(settings.tempstring, sizeof(settings.tempstring), "%s", wtemp_t -> value -> cstring);
+   settings_changed = true;
+  }
+
+  if (iconnow_tuple){
+      snprintf(settings.iconnowstring,sizeof(settings.iconnowstring),"%s",safe_weather_condition((int)iconnow_tuple->value->int32));
+     settings_changed = true;
+  }
+
+  if (wforetemp_t){
+    snprintf(settings.temphistring, sizeof(settings.temphistring), "%s", wforetemp_t -> value -> cstring);
+     settings_changed = true;
+  }
+
+  if (rainsoon_t){
+    settings.RainSoon = rainsoon_t->value->int32 != 0;
+     settings_changed = true;
+  }
+
+  // if (rainamount_t){
+  //   snprintf(settings.RainAmount,sizeof(settings.RainAmount),"%s",safe_rain_amount((int)rainamount_t->value->int32));
+  //   settings_changed = true;
+  // }
+
+  #endif
+
+ ///////////////////////////
+
+
+  // if (backlight_t) {
+  //     settings.BacklightInteraction = backlight_t->value->int32 == 1;
+    
+  //  }
 
   if (smoothsweep_t) {
       settings.SmoothSweep = smoothsweep_t->value->int32 == 1;
@@ -992,30 +1071,6 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   layer_mark_dirty(s_canvas_comp_bg);
   }
 
-  ////////Weather
-  // Tuple * uvarccol_t = dict_find(iter,MESSAGE_KEY_UVArcColor);
-  // Tuple * uvmaxcol_t = dict_find(iter,MESSAGE_KEY_UVMaxColor);
-  // Tuple * uvnowcol_t = dict_find(iter,MESSAGE_KEY_UVNowColor);
-  // Tuple * useweather_t = dict_find(iter, MESSAGE_KEY_UseWeather);
-  // Tuple * frequpdate_t = dict_find(iter, MESSAGE_KEY_UpSlider);
-
-  // if (frequpdate_t){
-  //   settings.UpSlider = (int) frequpdate_t -> value -> int32;
-  //   //Restart the counter
-  //   s_countdown = settings.UpSlider;
-  //    settings_changed = true;
-  // }
-
-  // if (useweather_t) {
-  //   settings.UseWeather = useweather_t->value->int32 != 0;
-  //   if(settings.UseWeather){
-  //     accel_tap_service_subscribe(accel_tap_handler); 
-  //     #ifdef DEBUG
-  //       APP_LOG(APP_LOG_LEVEL_DEBUG, "accel subscribed weather on");
-  //     #endif
-  //   }
-  //   settings_changed = true;
-  // }
 
    if (roman_t) {
     settings.Roman = roman_t->value->int32 == 1;
@@ -1104,18 +1159,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     layer_mark_dirty(s_canvas_second_hand);
   }
 
-  // if (enable_seconds_t) {
-  //   settings.EnableSecondsHand = enable_seconds_t->value->int32 == 1;
-  //   // Unsubscribe from any existing tick services
-  //   tick_timer_service_unsubscribe();
-  //   accel_tap_service_unsubscribe();
-  //   // Always subscribe to MINUTE_UNIT by default for efficiency
-  //   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
-  //   layer_mark_dirty(s_canvas_comp_bg);
-  //   layer_mark_dirty(s_canvas_month_hand);
-  //   layer_mark_dirty(s_canvas_second_hand);
-  // }
-
+  
   if (vibe_t) {
     strncpy(settings.VibeMode, vibe_t->value->cstring, sizeof(settings.VibeMode)); 
     layer_mark_dirty(s_canvas_bt_icon);
@@ -1142,31 +1186,6 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     layer_mark_dirty(s_date_battery_logo_layer);
   }
 
-  // if (enable_month_t) {
-  //   settings.EnableMonth = enable_month_t->value->int32 == 1;
-  //   layer_mark_dirty(s_canvas_comp_bg);
-  //   layer_mark_dirty(s_canvas_month_hand);
-  //   layer_mark_dirty(s_canvas_second_hand);
-  // }
-
-  if (enable_logo_t) {
-    settings.EnableLogo = enable_logo_t->value->int32 == 1;
-
-    // Check if the logo is enabled and the custom text string is not empty
-    if (settings.EnableLogo && logotext_t && strlen(logotext_t->value->cstring) > 0) {
-      // If the custom text field is not blank, use the user's text
-      snprintf(settings.LogoText, sizeof(settings.LogoText), "%s", logotext_t->value->cstring);
-    } else if (settings.EnableLogo && strlen(logotext_t->value->cstring) == 0) {
-      // If the custom text field is blank but the logo is enabled, use the default text
-      snprintf(settings.LogoText, sizeof(settings.LogoText), "%s", "tangent");
-    }
-    else {
-      snprintf(settings.LogoText, sizeof(settings.LogoText), "%s", "");
-    }
-
-    layer_mark_dirty(s_date_battery_logo_layer);
-
-  }
 
   if (enable_battery_t) {
     settings.EnableBattery = enable_battery_t->value->int32 == 1;
@@ -1571,7 +1590,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     layer_mark_dirty(s_canvas_second_hand);
     layer_mark_dirty(s_canvas_month_hand);
     layer_mark_dirty(s_canvas_battery);
-   // layer_mark_dirty(s_canvas_weather);
+     #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+
+    layer_mark_dirty(s_canvas_weather);
+    #endif
   }
 
   if (theme_settings_changed) {
@@ -1585,7 +1607,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     layer_mark_dirty(s_canvas_qt_icon);
     layer_mark_dirty(s_canvas_bt_icon);
     layer_mark_dirty(s_canvas_battery);
-   // layer_mark_dirty(s_canvas_weather);
+    
+    #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+    layer_mark_dirty(s_canvas_weather);
+    #endif
   }
 
   prv_save_settings();
@@ -1604,6 +1629,29 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 
   // Update hour and minute hands and the date on minute change
   if (units_changed & MINUTE_UNIT) {
+    ///update weather on just emery and gabbro
+    #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+    if (s_countdown == 0){
+      //Reset weather update countdown
+      s_countdown = settings.UpSlider;
+    } else{
+      s_countdown = s_countdown - 1;
+    }
+
+    if (s_countdown == 0 ){
+      #ifdef DEBUG
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "countdown is 0, updated weather at %d", tick_time -> tm_min);
+      #endif
+        // Begin dictionary
+        DictionaryIterator * iter;
+        app_message_outbox_begin( & iter);
+        // Add a key-value pair
+        dict_write_uint8(iter, 0, 0);
+        // Send the message!
+        app_message_outbox_send();
+    }
+    #endif
+
     minutes = tick_time->tm_min;
     hours = tick_time->tm_hour % 12;
     s_hours = tick_time->tm_hour;
@@ -1672,34 +1720,7 @@ static void draw_seconds_month_background(GContext *ctx) {
   graphics_context_set_fill_color(ctx, seconds_complication_color);
   graphics_fill_circle(ctx, origin, config.seconds_circle_radius - 1 );
 
-  //draw a thin circle in digits colour if hands shadow is off
-  // if(!settings.ShadowOn){
-  // graphics_context_set_stroke_color(ctx, settings.MinorTickColor); //settings.HourDigitsColor);
-  // graphics_context_set_stroke_width(ctx, 1); // Same width as the hand
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius );
-
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 4);
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 8);
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 12);
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 16);
-  // #if defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 20);
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 24);
-  // #endif
-
-  // graphics_context_set_stroke_color(ctx, GColorBlack);
-
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 2);
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 6);
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 10);
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 14);
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 18);
-  // #if defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 22);
-  // graphics_draw_circle(ctx, origin, config.seconds_circle_radius - 26);
-  // #endif
-  //}
-
+  
   
   for (int i = 0; i < 12; i++) {
         int angle = i * 30 - 90;
@@ -2332,21 +2353,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                    
   }
 
-//////////draw logo 
-  if (settings.EnableLogo) {
 
-   
-      //draw logo text
-      GRect LogoRect = GRect(4, bounds.size.h/2 - 20 , bounds.size.w / 2, 40);
-
-      char logodraw [20];
-      snprintf(logodraw, sizeof(logodraw), "%s", settings.LogoText);
-
-      graphics_context_set_text_color(ctx, settings.BWDateColor);
-      graphics_draw_text(ctx, logodraw, FontLogo, LogoRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-  
-
-  }
 
 }
 
@@ -2434,46 +2441,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
   
 
-  //draw battery value
-  if(settings.EnableBattery && grect_equal(&full_bounds, &bounds) ){
   
-            fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
-            FPoint battery_pos;
-            
-            int font_size_battery = config.font_size_battery * bounds.size.h/full_bounds.size.h;
-            
-            int s_battery_level = battery_state_service_peek().charge_percent;
-            fctx_begin_fill(&fctx);
-            fctx_set_text_em_height(&fctx, FCTX_Font, font_size_battery);
-
-                // Formats and draws the battery percentage text
-              if (settings.EnableBatteryLine) {
-
-                  battery_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 1));
-                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* bounds.size.h/full_bounds.size.h);
-
-                  char BatterytoDraw[6];
-                  snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
-
-                  fctx_set_offset(&fctx, battery_pos);
-                  fctx_draw_string(&fctx, BatterytoDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
-                  fctx_end_fill(&fctx);
-                }
-                else { //shift the percentage text slightly when there's no battery line
-
-                  battery_pos.x = INT_TO_FIXED((bounds.size.w / 2) );
-                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y)* bounds.size.h/full_bounds.size.h);
-
-                  char BatterytoDraw[6];
-                  snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
-
-                  fctx_set_offset(&fctx, battery_pos);
-                  fctx_draw_string(&fctx, BatterytoDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
-                  fctx_end_fill(&fctx);
-                }
-     
-  }
-
 
   //draw weekday and date text
   if (settings.EnableDate ) {
@@ -2552,54 +2520,88 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   }
 
 
-    if (settings.EnableLogo && grect_equal(&full_bounds, &bounds)) {  //draw logo text
-    
+  
+    //draw battery value
+  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  if(settings.EnableBattery && grect_equal(&full_bounds, &bounds) && !settings.UseWeather){
+  
+            fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+            FPoint battery_pos;
+            
+            int font_size_battery = config.font_size_battery * bounds.size.h/full_bounds.size.h;
+            
+            int s_battery_level = battery_state_service_peek().charge_percent;
+            fctx_begin_fill(&fctx);
+            fctx_set_text_em_height(&fctx, FCTX_Font, font_size_battery);
 
-          #ifdef PBL_PLATFORM_EMERY
-            #define LOGO_WRAP_AT 8
-          #elif defined (PBL_PLATFORM_GABBRO)
-            #define LOGO_WRAP_AT 18
-          #else
-            #define LOGO_WRAP_AT 12
-          #endif
+                // Formats and draws the battery percentage text
+              if (settings.EnableBatteryLine) {
 
-          fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
-          FPoint logo_pos;
-          logo_pos.x = INT_TO_FIXED((bounds.size.w / 4 + config.LogoXOffset));
-          logo_pos.y = INT_TO_FIXED(bounds.size.h / 2 - config.LogoYOffset2);
-            int font_size_logo = config.font_size_logo;
-            char logodraw[20];
-            snprintf(logodraw, sizeof(logodraw), "%s", settings.LogoText);
+                  battery_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 1));
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* bounds.size.h/full_bounds.size.h);
 
-            char *line2 = NULL;
-            if (strlen(logodraw) > LOGO_WRAP_AT) {
-                char *split = NULL;
-                for (int i = LOGO_WRAP_AT; i >= 0; i--) {
-                    if (logodraw[i] == ' ') { split = &logodraw[i]; break; }
+                  char BatterytoDraw[6];
+                  snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
+
+                  fctx_set_offset(&fctx, battery_pos);
+                  fctx_draw_string(&fctx, BatterytoDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
+                  fctx_end_fill(&fctx);
                 }
-                if (split) { *split = '\0'; line2 = split + 1; }
-            }
-            if (line2) {
-                fctx_begin_fill(&fctx);
-                fctx_set_text_em_height(&fctx, FCTX_Font, font_size_logo);
-                fctx_set_offset(&fctx, logo_pos);
-                fctx_draw_string(&fctx, logodraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
-                fctx_end_fill(&fctx);
-                logo_pos.y = INT_TO_FIXED(bounds.size.h / 2 - config.LogoYOffset2/2 + font_size_logo + 2);
-                fctx_begin_fill(&fctx);
-                fctx_set_text_em_height(&fctx, FCTX_Font, font_size_logo);
-                fctx_set_offset(&fctx, logo_pos);
-                fctx_draw_string(&fctx, line2, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
-                fctx_end_fill(&fctx);
-            } else {
-                fctx_begin_fill(&fctx);
-                fctx_set_text_em_height(&fctx, FCTX_Font, font_size_logo);
-                fctx_set_offset(&fctx, logo_pos);
-                fctx_draw_string(&fctx, logodraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
-                fctx_end_fill(&fctx);
-            }
+                else { //shift the percentage text slightly when there's no battery line
+
+                  battery_pos.x = INT_TO_FIXED((bounds.size.w / 2) );
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y)* bounds.size.h/full_bounds.size.h);
+
+                  char BatterytoDraw[6];
+                  snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
+
+                  fctx_set_offset(&fctx, battery_pos);
+                  fctx_draw_string(&fctx, BatterytoDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
+                  fctx_end_fill(&fctx);
+                }
      
-    }
+  }
+  #else
+  if(settings.EnableBattery && grect_equal(&full_bounds, &bounds) ){
+  
+            fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+            FPoint battery_pos;
+            
+            int font_size_battery = config.font_size_battery * bounds.size.h/full_bounds.size.h;
+            
+            int s_battery_level = battery_state_service_peek().charge_percent;
+            fctx_begin_fill(&fctx);
+            fctx_set_text_em_height(&fctx, FCTX_Font, font_size_battery);
+
+                // Formats and draws the battery percentage text
+              if (settings.EnableBatteryLine) {
+
+                  battery_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 1));
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* bounds.size.h/full_bounds.size.h);
+
+                  char BatterytoDraw[6];
+                  snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
+
+                  fctx_set_offset(&fctx, battery_pos);
+                  fctx_draw_string(&fctx, BatterytoDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
+                  fctx_end_fill(&fctx);
+                }
+                else { //shift the percentage text slightly when there's no battery line
+
+                  battery_pos.x = INT_TO_FIXED((bounds.size.w / 2) );
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y)* bounds.size.h/full_bounds.size.h);
+
+                  char BatterytoDraw[6];
+                  snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
+
+                  fctx_set_offset(&fctx, battery_pos);
+                  fctx_draw_string(&fctx, BatterytoDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
+                  fctx_end_fill(&fctx);
+                }
+     
+  }
+  #endif
+
 
     fctx_deinit_context(&fctx);
       
@@ -2661,11 +2663,6 @@ static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
 }
 
 static void layer_update_proc_complication(Layer *layer, GContext *ctx) {
-
-  
-    // if(!settings.EnableMonth && !settings.EnableSecondsHand && !settings.AlwaysShowSubDial){
-    //   return;
-    // }
 
     if ((settings.SubDialChoice != 3 && 
     settings.SubDialChoice != 1 && settings.SubDialChoice != 2 && settings.SubDialChoice != 6)) {
@@ -2826,6 +2823,19 @@ static void layer_update_proc_bt(Layer * layer, GContext * ctx){
               yPosition = bounds.size.h - config.BTQTBottomYPosition;
               textboxwidth = config.ShadowAndMaskWidth/2;
               BTIconYOffset = config.BTIconYOffset;
+      #elif defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+              if(quiet_time_is_active()){
+              xPosition = config.BottomXPosition + 2 -52;
+              yPosition = bounds.size.h - config.BTQTBottomYPosition;
+              textboxwidth = config.ShadowAndMaskWidth; ///2;
+              BTIconYOffset = config.BTIconYOffset;
+            }
+            else{
+              xPosition = config.BottomXPosition - 50;
+              yPosition = bounds.size.h - config.BTQTBottomYPosition;
+              textboxwidth = config.ShadowAndMaskWidth;
+              BTIconYOffset = config.BTIconYOffset;
+            }
       #else
             if(quiet_time_is_active()){
               xPosition = config.BottomXPosition + 2;
@@ -2887,6 +2897,20 @@ static void layer_update_proc_qt(Layer * layer, GContext * ctx){
         yPosition = bounds.size.h - config.BTQTBottomYPosition;
         textboxwidth = config.ShadowAndMaskWidth;
         QTIconYOffset = 0 - config.QTIconYOffset;
+      #elif defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+        if(connection_service_peek_pebble_app_connection()){
+
+        xPosition = config.BottomXPosition + 50;
+        yPosition = bounds.size.h - config.BTQTBottomYPosition -1;
+        textboxwidth = config.ShadowAndMaskWidth;
+        QTIconYOffset = 0 - config.QTIconYOffset;
+       }
+      else{
+        xPosition = config.BottomXPosition + 50;//+ config.ShadowAndMaskWidth/2 - 2;
+        yPosition = bounds.size.h - config.BTQTBottomYPosition -1 ;
+        textboxwidth = config.ShadowAndMaskWidth/2;
+        QTIconYOffset = 0 - config.QTIconYOffset;
+      }
       #else
        if(connection_service_peek_pebble_app_connection()){
 
@@ -2997,6 +3021,120 @@ static void hour_min_hands_canvas_update_proc(Layer *layer, GContext *ctx) {
 
 }
 
+////////weather updates - emery and gabbro only
+#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+static void weather_update_proc(Layer *layer, GContext *ctx) {
+    
+    if (!settings.UseWeather) {
+      return;
+    }
+  
+    GRect bounds = layer_get_unobstructed_bounds(layer);
+    GRect full_bounds = layer_get_bounds(layer);
+
+    if (!grect_equal(&full_bounds, &bounds)) {
+      return;
+    }
+
+
+    char CondToDraw[4];
+        //snprintf(CondToDraw, sizeof(CondToDraw), "%s", "\U0000f019");  //settings.iconnowstring);
+        snprintf(CondToDraw, sizeof(CondToDraw), "%s", settings.iconnowstring);
+    
+    if(settings.EnableBatteryLine){
+    GRect IconNowRect = config.IconNowRect[0]; 
+    graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+    graphics_draw_text(ctx, CondToDraw, FontWeatherIcons, IconNowRect, GTextOverflowModeFill, GTextAlignmentRight, NULL);
+
+    }
+    else{
+    
+    GRect IconNowRect = config.IconNowRect2[0]; 
+    graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+    graphics_draw_text(ctx, CondToDraw, FontWeatherIcons, IconNowRect, GTextOverflowModeFill, GTextAlignmentRight, NULL);
+
+    }
+
+  
+    if (settings.RainSoon) {
+
+      // char RainToDraw[4];
+      //   snprintf(RainToDraw, sizeof(RainToDraw), "%s", settings.RainAmount);
+
+      GRect RainIconRect = config.RainIconRect[0];
+      graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+      graphics_draw_text(ctx, "\U0000F084", FontWeatherIcons, RainIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+      //graphics_draw_text(ctx, RainToDraw, FontWeatherIcons, RainIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+    }
+    
+
+    FContext fctx;
+    fctx_init_context(&fctx, ctx);
+    fctx_set_color_bias(&fctx, 0);
+    #ifdef PBL_COLOR
+    fctx_enable_aa(true);
+    #endif
+
+    fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+            FPoint temp_pos;
+            
+            int font_size_temp = (config.font_size_battery) + 6 * bounds.size.h/full_bounds.size.h;
+            
+            //int s_battery_level = battery_state_service_peek().charge_percent;
+            fctx_begin_fill(&fctx);
+            fctx_set_text_em_height(&fctx, FCTX_Font, font_size_temp);
+
+                // Formats and draws the battery percentage text
+              if (settings.EnableBatteryLine) {
+
+                  temp_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 2 ));
+                  temp_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z - 2 - 1)* bounds.size.h/full_bounds.size.h);
+
+                  char TempToDraw[6];
+                  //snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
+                  snprintf(TempToDraw, sizeof(TempToDraw), "%s%s",settings.tempstring,"°");
+
+
+
+                  fctx_set_offset(&fctx, temp_pos);
+                  fctx_draw_string(&fctx, TempToDraw, FCTX_Font, GTextAlignmentLeft, FTextAnchorTop);
+                  fctx_end_fill(&fctx);
+                }
+                else { //shift the text slightly when there's no battery line
+
+                  temp_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 2));
+                  temp_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y - 2 - 1)* bounds.size.h/full_bounds.size.h);
+
+                  char TempToDraw[6];
+                  //snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
+                  snprintf(TempToDraw, sizeof(TempToDraw), "%s%s",settings.tempstring,"°");
+
+                  fctx_set_offset(&fctx, temp_pos);
+                  fctx_draw_string(&fctx, TempToDraw, FCTX_Font, GTextAlignmentLeft, FTextAnchorTop);
+                  fctx_end_fill(&fctx);
+                }
+                int font_size_fore = (config.font_size_battery) +2 * bounds.size.h/full_bounds.size.h;
+
+                fctx_begin_fill(&fctx);
+                fctx_set_text_em_height(&fctx, FCTX_Font, font_size_fore);
+                FPoint fore_pos;
+                
+                 fore_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 1));
+                 fore_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* bounds.size.h/full_bounds.size.h + 28);
+
+
+                char TempForeToDraw[14];
+                snprintf(TempForeToDraw, sizeof(TempForeToDraw), "%s%s",settings.temphistring,"°");
+
+                fctx_set_offset(&fctx, fore_pos);
+                fctx_draw_string(&fctx, TempForeToDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
+                fctx_end_fill(&fctx);
+
+    fctx_deinit_context(&fctx);
+
+}
+#endif
+
 ///update procedure for background
 static void bg_update_proc(Layer *layer, GContext *ctx) {
 
@@ -3037,8 +3175,16 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
 
 static void prv_window_load(Window *window) {
 
+  #if defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+    light_enable_interaction();
+  #endif
+
   #ifdef BACKLIGHTON
     light_enable(true);  ///for ShareX screencapture gifs.  Must comment out declaration on line 11 before publishing, otherwise the backlight will stay on!
+  #endif
+
+  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  s_countdown = settings.UpSlider;
   #endif
 
   time_t temp = time(NULL);
@@ -3066,29 +3212,15 @@ static void prv_window_load(Window *window) {
     FontLogo = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DATE_14));
     FontHour = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DATE_30));
     #endif
-
+    #if defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+    FontWeatherIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WEATHERICONS_20));
+    #endif
   // Subscribe to the connection service to get Bluetooth status updates.
   connection_service_subscribe((ConnectionHandlers){
     .pebble_app_connection_handler = bluetooth_vibe_icon
   });
 
-   // Subscribe to the correct tick service based on settings
-    // if (settings.EnableSecondsHand) {
-    //     if (settings.SecondsVisibleTime == 135) {
-    //     tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
-    //     } else {
-    //     tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
-    //     s_timeout_timer = app_timer_register(1000*settings.SecondsVisibleTime, timeout_handler,NULL);
-    //     accel_tap_service_subscribe(accel_tap_handler);
-    //     }
-    // }
-    // else {
-    // tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
-    // }
-    //showSeconds = settings.EnableSecondsHand;
 
-    // showSeconds = (settings.SubDialChoice == 1 || settings.SubDialChoice == 2 || settings.SubDialChoice == 6);
-    // if (showSeconds) {
         if (settings.SubDialChoice == 1) {
         showSeconds = true;
         start_smooth_sweep_timer();
@@ -3105,7 +3237,7 @@ static void prv_window_load(Window *window) {
         stop_smooth_sweep_timer();
         tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
         }
-        //showSeconds = (settings.SubDialChoice == 1 || settings.SubDialChoice == 2 || settings.SubDialChoice == 6);
+ 
 
    
   //create layers
@@ -3125,6 +3257,9 @@ static void prv_window_load(Window *window) {
     layer_set_hidden(s_canvas_bt_icon, is_connected);
   //  #endif
   s_canvas_battery = layer_create(bounds);
+  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  s_canvas_weather = layer_create(bounds);
+  #endif
   s_canvas_layer = layer_create(bounds);
   s_date_battery_logo_layer = layer_create(bounds);
 
@@ -3137,6 +3272,9 @@ static void prv_window_load(Window *window) {
   layer_add_child(window_layer, s_canvas_bt_icon);
   layer_add_child(window_layer, s_canvas_qt_icon);
   layer_add_child(window_layer, s_date_battery_logo_layer); //fctx version of text
+  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  layer_add_child(window_layer, s_canvas_weather);
+  #endif
   layer_add_child(window_layer, s_canvas_battery); //battery line
   layer_add_child(window_layer, s_canvas_layer);  //hour and minute hands
  
@@ -3147,6 +3285,9 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_canvas_qt_icon, layer_update_proc_qt);
   layer_set_update_proc(s_date_battery_logo_layer, update_logo_date_battery_fctx_layer);
   layer_set_update_proc(s_canvas_battery, layer_update_proc_battery_line);
+  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  layer_set_update_proc(s_canvas_weather, weather_update_proc);
+  #endif
   layer_set_update_proc(s_canvas_layer, hour_min_hands_canvas_update_proc);
   layer_set_update_proc(s_canvas_comp_bg,layer_update_proc_complication);
   layer_set_update_proc(s_canvas_second_hand, layer_update_proc_seconds_hand);
@@ -3173,6 +3314,9 @@ static void prv_window_unload(Window *window) {
   layer_destroy(s_canvas_tz);
   layer_destroy(s_canvas_comp_bg);
   layer_destroy(s_canvas_battery);
+  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  layer_destroy(s_canvas_weather);
+  #endif
   layer_destroy(s_canvas_bt_icon);
   layer_destroy(s_canvas_qt_icon);
   layer_destroy(s_date_battery_logo_layer);
@@ -3186,6 +3330,9 @@ static void prv_window_unload(Window *window) {
   fonts_unload_custom_font(FontHour);
   #endif
   fonts_unload_custom_font(FontBTQTIcons);
+  #if defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  fonts_unload_custom_font(FontWeatherIcons);
+  #endif
   if (s_timeout_timer) {
   app_timer_cancel(s_timeout_timer);
   s_timeout_timer = NULL;
@@ -3195,8 +3342,12 @@ static void prv_window_unload(Window *window) {
 static void prv_init(void) {
   prv_load_settings();
 
-  // Open AppMessage and set the message handler
+////set larger for emery & gabbro to fix crash on send of extra weather data
+  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  app_message_open(2048, 2048);
+  #else
   app_message_open(512, 512);
+  #endif
   app_message_register_inbox_received(prv_inbox_received_handler);
 
   s_window = window_create();

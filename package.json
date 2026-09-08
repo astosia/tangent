@@ -1,7 +1,7 @@
 {
   "name": "tangent",
   "author": "astosia",
-  "version": "2.1.0",
+  "version": "3.2.0",
   "keywords": [
     "pebble",
     "watchface",
@@ -115,7 +115,17 @@
       "TZ_STATUS_MESSAGE",
       "showremoteAMPM",
       "SubDialChoice",
-      "SmoothSweep"
+      "SmoothSweep",
+      "WeatherProv",
+      "Lat",
+      "Long",
+      "WeatherUnit",
+      "WeatherTemp",
+      "IconNow",
+      "APIKEY_User",
+      "TempFore",
+      "RainSoon",
+      "RainAmount"
     ],
     "resources": {
       "media": [
@@ -186,6 +196,16 @@
             "gabbro"
           ],
           "type": "raw"
+        },
+        {
+          "file": "fonts/WeatherIcons-RegularMod.ttf",
+          "characterRegex": "[]",
+          "name": "FONT_WEATHERICONS_20",
+          "targetPlatforms": [
+            "emery",
+            "gabbro"
+          ],
+          "type": "font"
         }
       ]
     }

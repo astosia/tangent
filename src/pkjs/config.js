@@ -172,6 +172,14 @@ module.exports = [
         "defaultValue": "Second hand options",
         "description": "Use when second hand is selected on sub-dial"
       },
+      // {
+      //   "type": "toggle",
+      //   "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT"],
+      //   "messageKey": "BacklightInteraction",
+      //   "label": "Use Backlight to trigger seconds instead of shake",
+      //   "description": "When Seconds with Timeout is on the sub-dial, shake to show the seconds hand for selected duration",
+      //   "defaultValue":false
+      // },
       {
         "type": "slider",
         "messageKey": "SecondsVisibleTime",
@@ -316,6 +324,86 @@ module.exports = [
   },
   {
     "type": "section",
+    "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT"],
+    "items": [
+    {
+        "type": "heading",
+        "defaultValue": "Weather"
+    },
+    {
+        "type": "toggle",
+        "messageKey": "UseWeather",
+        "label": "Show Weather",
+        "description": "current & forecast temp & condition icon replaces battery value",
+        "defaultValue": false
+    },
+    {
+        "type": "select",
+        "messageKey": "WeatherProv",
+        "defaultValue": "ds",
+        "label": "Weather Provider",
+        "options": [
+          {
+            "label": "Open-Meteo",
+            "value": "ds"
+          },
+          {
+            "label": "OpenWeatherMap",
+            "value": "owm"
+          }
+        ]
+      },
+      {
+        "type": "input",
+        "messageKey": "Lat",
+        "label": "Manual Location - Latitude",
+        "attributes": {
+          "placeholder": "eg: 51.4769 (leave blank to use GPS)"
+        }
+      },
+      {
+        "type": "input",
+        "messageKey": "Long",
+        "label": "Manual Location - Longitude",
+        "description": "Leave both blank to use GPS location for sunrise & sunset times and weather. You can use <a href =https://www.google.com/maps>Google Maps</a> or <a href =https://www.openstreetmap.org/>OpenStreetMap</a> to find latitude & longitude.",
+        "attributes": {
+          "placeholder": "eg: -0.0005 (leave blank to use GPS)"
+        }
+      },
+      {
+        "type": "input",
+        "messageKey": "APIKEY_User",
+        "defaultValue": "",
+        "label": "OWM API Key",
+        "description": "Weather data uses Open-Meteo by default which does not require an API key.  If you prefer OpenWeatherMap, you can <a href =https://home.openweathermap.org/users/sign_up/>register for a free personal API key here</a>.",
+        "attributes": {
+          "placeholder": "Paste OpenWeatherMap API Key here, leave blank for Open-Meteo"
+        }
+      },
+      {
+        "type": "slider",
+        "messageKey": "UpSlider",
+        "defaultValue": 30,
+        "label": "Weather update frequency (minutes)",
+        "description": "More frequent requests will drain your phone battery more quickly",
+        "min": 15,
+        "max": 120,
+        "step": 15
+      },
+      {
+        "type": "toggle",
+        "messageKey": "WeatherUnit",
+        "label": "Temperature in °C (off) or °F (on)",
+        "defaultValue": false
+      }
+    ]
+  },
+  {
+    "type": "submit",
+    "defaultValue": "Save"
+  },
+  {
+    "type": "section",
     "capabilities": [ "COLOR" ],
     "items": [
       {
@@ -420,7 +508,7 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Date, Battery & Logo Text Colour",
+        "label": "Date, Battery & Weather Text Colour",
         "messageKey": "DateColor",
         "defaultValue": "000000"
       },
@@ -528,7 +616,7 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Date, Battery Value & Logo Text Colour",
+        "label": "Date, Battery Value & Weather Text Colour",
         "messageKey": "BWDateColor",
         "defaultValue": "000000"
       },
