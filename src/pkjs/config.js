@@ -66,6 +66,26 @@ module.exports = [
         ]
       },
       {
+        "type": "select",
+        "messageKey": "DateLanguage",
+        "defaultValue": "auto",
+        "label": "Date Language",
+        "options": [
+          { "label": "Automatic (match watch)", "value": "auto" },
+          { "label": "English",  "value": "en_EN" },
+          { "label": "Español",  "value": "es_ES" },
+          { "label": "Français", "value": "fr_FR" },
+          { "label": "Deutsch",  "value": "de_DE" },
+          { "label": "Italiano", "value": "it_IT" },
+          { "label": "Português","value": "pt_PT" },
+          { "label": "Svenska",  "value": "sv_SE" },
+          { "label": "Dansk",    "value": "da_DK" },
+          { "label": "Norsk",    "value": "no_NO" },
+          { "label": "Suomi",   "value": "fi_FI" },
+          { "label": "Nederlands","value": "nl_NL" }
+        ]
+      },
+      {
         "type": "toggle",
         "label": "Battery Value visible",
         "messageKey": "EnableBattery",
@@ -395,12 +415,12 @@ module.exports = [
         "messageKey": "WeatherUnit",
         "label": "Temperature in °C (off) or °F (on)",
         "defaultValue": false
+      },
+      {
+        "type": "submit",
+        "defaultValue": "Save"
       }
     ]
-  },
-  {
-    "type": "submit",
-    "defaultValue": "Save"
   },
   {
     "type": "section",

@@ -78,58 +78,23 @@ static ClaySettings settings;
 
 // Date position struct for different platforms
 typedef struct {
-  int BottomXPosition;
   int DateBottomYPosition;
-  int BTQTBottomYPosition;
-  int LeftxPosition;
-  int xOffset;
   int yOffset;
-  int xOffsetFctxWeekday;
-  int xOffsetFctxDate;
   int yOffsetFctx;
-  int xWeekdayOffset;
   int yWeekdayDateOffset;
-  int xDateOffset;
-  int ShadowAndMaskWidth;
-  int WeekdayWidth;
-  int DateWidth;
   int WeekdayDateHeight;
-  int BTIconYOffset;
-  int QTIconYOffset;
   int BatteryYOffset;
-  int BatteryYOffset2;
-  int BatteryYOffset3;
   int BatteryLineYOffset;
-  int BatteryLineYOffset2;
-  int LogoXOffset;
-  int LogoYOffset;
-  int LogoYOffset2;
-  int LogoYOffset3;
   int font_size_digits;
   int font_size_battery;
   int font_size_date;
-  int font_size_logo;
-  int six_pos_x;
-  int six_pos_y;
-  int twelve_pos_x;
-  int twelve_pos_y;
-  int date_pos_x;
-  int date_pos_y;
   int battery_pos_z;
   int battery_pos_y;
   int battery_line;
   int analogue_hand_a;
   int analogue_hand_b;
   int analogue_hand_c;
-  int hour_hand_a;
-  int min_hand_a;
-  int circle_radius_adj;
-  int tick_mask_radius_adj;
   int hands_shadow;
-  int QTIconXOffset2;
-  int BTIconXOffset2;
-  int QTIconYOffset2;
-  int BTIconYOffset2;
   int corner_radius_minutehand;
   int corner_radius_hourhand;
   int corner_radius_majortickrect;
@@ -158,74 +123,36 @@ typedef struct {
   int seconds_circle_centre_y;
   int SecondHandCentreOuterRadius;
   int SecondHandCentreInnerRadius;
-  GRect dial_digits_mask_a[1];
-  GRect dial_digits_mask_b[1];
-  GRect dial_digits_mask_c[1];
-  GRect UVDayValueRect[1];
   GRect battery_arc_bounds[1];
-  GRect battery_arc_bounds_centre[1];
   int romanadjust;
   GRect IconNowRect[1];
   GRect IconNowRect2[1];
-  GRect TempRect[1];
-  GRect TempForeRect[1];
   GRect RainIconRect[1];
   GRect WarningIconRect[1];
+  GRect BTIconRect[1];
+  GRect QTIconRect[1];
 } UIConfig;
 
 #ifdef PBL_PLATFORM_EMERY
 static const UIConfig config = {
-.BottomXPosition = 46,
 .DateBottomYPosition = 60, //was 168
-.BTQTBottomYPosition = 119, //168-108+57 - 8,
-.LeftxPosition = -5,
-.xOffset = 22,
 .yOffset = -8,
-.xOffsetFctxWeekday = 38/2  -1,
-.xOffsetFctxDate = 22/2 + 1,
 .yOffsetFctx = 3,
-.xWeekdayOffset = 2,
 .yWeekdayDateOffset = 1 + 30- 4,
-.xDateOffset = 41,
-.ShadowAndMaskWidth = 64 - 20,
-.WeekdayWidth = 38,
-.DateWidth = 22,
 .WeekdayDateHeight = 13,
-.BTIconYOffset = -21-45-12-2,
-.QTIconYOffset = 21+45+12+2,
 .BatteryYOffset = 53-4 +3-1-2 + 2 +2,
-.BatteryYOffset2 = -9,
-.BatteryYOffset3 = -9,
 .BatteryLineYOffset = 66 + 6 + 4 + 2,
-.BatteryLineYOffset2 = -8+114,
-.LogoXOffset = 10,
-.LogoYOffset = 69+1,
-.LogoYOffset2 = 20,
-.LogoYOffset3 = -8+114,
 .font_size_digits = 40,
 .digit_inset = 14,
 .font_size_battery = 20,
 .font_size_date = 24 + 4,
-.font_size_logo = 16,
-.six_pos_x = 2,
-.six_pos_y = -40 + 9,
-.twelve_pos_x = - 2 + 1,
-.twelve_pos_y = -3,
 .battery_pos_z = -2+2,
 .battery_pos_y = 4+2,
 .battery_line = 63, //sized to the width of the default logo 
 .analogue_hand_a = 1,  //was 20
 .analogue_hand_b = 0,  //was28
 .analogue_hand_c = 1,
-.hour_hand_a = 45,
-.min_hand_a = 2,  //was 20
-.circle_radius_adj = 18,
-.tick_mask_radius_adj = 12,
 .hands_shadow = 2,
-.QTIconXOffset2 = 10-22,
-.QTIconYOffset2 = 0,
-.BTIconXOffset2 = 10+25,
-.BTIconYOffset2 = 0,
 .corner_radius_minutehand = 20,
 .corner_radius_hourhand = 10,
 .corner_radius_majortickrect = 20,
@@ -253,72 +180,34 @@ static const UIConfig config = {
 .seconds_circle_radius = 24+3+1,
 .seconds_circle_centre_x = 100,
 .seconds_circle_centre_y = 163-2-8+1,
-.dial_digits_mask_a = {{{100-15,23},{39,7}}},
-.dial_digits_mask_b = {{{100-19,0},{39,27}}},
-.dial_digits_mask_c = {{{100-15,228-27},{31,27}}},
-  .UVDayValueRect = {{{57,97},{25,25}}},     //UVI value daily forecast max
   .battery_arc_bounds = {{{51,98},{37,37}}},        //UV arc, right of centre, middle row
-  .battery_arc_bounds_centre = {{{49,96},{41,41}}},    //UVI daily forecast maximum
 .romanadjust = 2,
-.IconNowRect = {{{0,46+2},{98,22}}},
-.IconNowRect2 = {{{0,50+2},{98,22}}},
-.TempRect = {{{102,48+2},{98,22}}},
-.TempForeRect = {{{0,74+2},{200,22}}},
-.RainIconRect = {{{58-7-7+2,72-23+29+2+1},{40,22}}},
-.WarningIconRect = {{{58-7-7,72-23+29+2},{40,22}}}
+.IconNowRect = {{{0,48},{98,22}}},
+.IconNowRect2 = {{{0,52},{98,22}}},
+.RainIconRect = {{{48,81},{40,22}}},
+.WarningIconRect = {{{132,83},{40,22}}},
+.BTIconRect = {{{53,21},{44,20}}},
+.QTIconRect = {{{106,20},{44,20}}}
 };
 #elif defined(PBL_PLATFORM_GABBRO)
 static const UIConfig config = {
-.BottomXPosition = 46+30,
 .DateBottomYPosition = 67, //168+22+3,
-.BTQTBottomYPosition = 141, //168+22+3-64-10,
-.LeftxPosition = 16+2,
-.xOffset = 22,
 .yOffset = -8,
-.xOffsetFctxWeekday = 38/2  -1,
-.xOffsetFctxDate = 22/2 + 1,
 .yOffsetFctx = 3,
-.xWeekdayOffset = 2,
 .yWeekdayDateOffset = 1 + 32 - 4,
-.xDateOffset = 41,
-.ShadowAndMaskWidth = 64 - 20,
-.WeekdayWidth = 38,
-.DateWidth = 22,
 .WeekdayDateHeight = 13,
-.BTIconYOffset = -21 -67,
-.QTIconYOffset = 21 + 67,
 .BatteryYOffset = 53-4 +3-1 + 11 - 2 + 2 + 2,
-.BatteryYOffset2 = -9,
-.BatteryYOffset3 = -1,
 .BatteryLineYOffset = 66 + 6 + 11 + 4 ,
-.BatteryLineYOffset2 = -8+130,
-.LogoXOffset = 22,
-.LogoYOffset = 69+1+1,
-.LogoYOffset2 = 21,
-.LogoYOffset3 = -8+130,
 .font_size_digits = 48,
 .digit_inset = 31,
 .font_size_battery = 20,
 .font_size_date = 28 + 4,
-.font_size_logo = 16,
-.six_pos_x = 2,
-.six_pos_y = - 40 + 9,
-.twelve_pos_x = - 2 + 1,
-.twelve_pos_y = -3,
 .battery_pos_z = -2,
 .battery_pos_y = 4,
 .battery_line = 63,
 .analogue_hand_a = 3+8,
 .analogue_hand_b = 0,  //was 32
-.hour_hand_a = 60,
-.min_hand_a = 2,
-.circle_radius_adj = 17,
-.tick_mask_radius_adj = 12,
 .hands_shadow = 2,
-.QTIconXOffset2 = 10-16,
-.QTIconYOffset2 = 0,
-.BTIconXOffset2 = 10+20,
-.BTIconYOffset2 = 0,
 .analogue_hand_c = 1,
 .outertickinset = 6,
 .innertickinset = 12,
@@ -337,73 +226,35 @@ static const UIConfig config = {
 .seconds_circle_radius = 30 + 1,
 .seconds_circle_centre_x = 130,
 .seconds_circle_centre_y = 189-6-6-1-1,
-.dial_digits_mask_a = {{{130-15,23-2},{39,7+2}}},
-.dial_digits_mask_b = {{{130-19,0},{39,27}}},
-.dial_digits_mask_c = {{{130-15,260-27},{31,27}}},
-  .UVDayValueRect = {{{57+29,98+13},{25,25}}},     //UVI value daily forecast max
-  .battery_arc_bounds = {{{51+29,99+13},{37,37}}},        //UV arc, right of centre, middle row
-  .battery_arc_bounds_centre = {{{49+29,97+13},{41,41}}},    //UVI daily forecast maximum
+  .battery_arc_bounds = {{{80,112},{37,37}}},        //UV arc, right of centre, middle row
 .romanadjust = 0,
 .IconNowRect = {{{0,60},{128,22}}},
 .IconNowRect2 = {{{0,64},{128,22}}},
-.TempRect = {{{132,60},{128,22}}},
-.TempForeRect = {{{0,88},{260,22}}},
 .RainIconRect = {{{75,90},{40,22}}},
-.WarningIconRect = {{{260-75,90},{40,22}}}
+.WarningIconRect = {{{165,91},{40,22}}},
+.BTIconRect = {{{78,23},{44,20}}},
+.QTIconRect = {{{140,22},{44,20}}}
 };
 #elif defined(PBL_BW)
 static const UIConfig config = {
-.BottomXPosition = 38,
 .DateBottomYPosition = 40, //126-3+5,
-.BTQTBottomYPosition = 45, //126-3,
-.LeftxPosition = 6 - 2,
-.xOffset = 10,
 .yOffset = -7,
-.xOffsetFctxWeekday = 30/2 ,
-.xOffsetFctxDate = 16/2 +1,
 .yOffsetFctx = 2,
-.xWeekdayOffset = 1,
 .yWeekdayDateOffset = 18 - 2,
-.xDateOffset = 31,
-.ShadowAndMaskWidth = 48-12,
-.WeekdayWidth = 30,
-.DateWidth = 16,
 .WeekdayDateHeight = 11,
-.BTIconYOffset = -20,
-.QTIconYOffset = 18,
 .BatteryYOffset = 40-4,
-.BatteryYOffset2 = -5,
-.BatteryYOffset3 = -5,
 .BatteryLineYOffset = 49 + 6,
-.BatteryLineYOffset2 = -8+84,
-.LogoXOffset = 6,
-.LogoYOffset = 52+1,
-.LogoYOffset2 = -5+20,
-.LogoYOffset3 = -5+84,
 .font_size_digits = 30,
 .digit_inset = 10,
 .font_size_battery = 16,
 .font_size_date = 18 + 2,
-.font_size_logo = 14,
-.six_pos_x = 2,
-.six_pos_y = - 38 + 9,
-.twelve_pos_x = - 2 + 1,
-.twelve_pos_y = -2,
 .battery_pos_z = 0,
 .battery_pos_y = 4,
 .battery_line = 51,
 .analogue_hand_a = 1,
 .analogue_hand_b = 0,  //was22
 .analogue_hand_c = 1,
-.hour_hand_a = 35,
-.min_hand_a = 22,
-.circle_radius_adj = 18,
-.tick_mask_radius_adj = 12,
 .hands_shadow = 1,
-.QTIconXOffset2 = 42,
-.QTIconYOffset2 = 23,
-.BTIconXOffset2 = -29,
-.BTIconYOffset2 = 23,
 .corner_radius_minutehand = 15,
 .corner_radius_hourhand = 6,
 .corner_radius_majortickrect = 15,
@@ -431,67 +282,31 @@ static const UIConfig config = {
 .seconds_circle_radius = 18,
 .seconds_circle_centre_x = 72,
 .seconds_circle_centre_y = 117-3,
-.dial_digits_mask_a = {{{72-14,22},{36,7}}},
-.dial_digits_mask_b = {{{72-18,0},{36,26}}},
-.dial_digits_mask_c = {{{72-13,168-26},{28,26}}},
-  .UVDayValueRect = {{{45-7+37,79-20+8+3+4-27},{20,14}}},     //UVI value daily forecast max
-  .battery_arc_bounds = {{{37+39,87-20+8-27},{24,24}}},        //UV arc, right of centre, middle row
-  .battery_arc_bounds_centre = {{{37-2+2+37,87-2-20+8-27},{24+4,24+4}}},    //UVI daily forecast maximum
-.romanadjust = 1
+  .battery_arc_bounds = {{{76,48},{24,24}}},        //UV arc, right of centre, middle row
+.romanadjust = 1,
+.BTIconRect = {{{36,16},{36,20}}},
+.QTIconRect = {{{75,16},{36,20}}}
 
 };
 #elif defined(PBL_ROUND)
 static const UIConfig config = {
-.BottomXPosition = 52,
 .DateBottomYPosition = 48, //132,
-.BTQTBottomYPosition = 95, //132 - 104+63 - 6,
-.LeftxPosition = 16,
-.xOffset = 14,
 .yOffset = -7,
-.xOffsetFctxWeekday = 30/2 -1,
-.xOffsetFctxDate = 16/2 +1,
 .yOffsetFctx = 2,
-.xWeekdayOffset = 1,
 .yWeekdayDateOffset = 1 + 24 - 4,
-.xDateOffset = 31,
-.ShadowAndMaskWidth = 48-16,
-.WeekdayWidth = 30,
-.DateWidth = 16,
 .WeekdayDateHeight = 11,
-.BTIconYOffset = -20,
-.QTIconYOffset = 18,
 .BatteryYOffset = 40-4,
-.BatteryYOffset2 = -4,
-.BatteryYOffset3 = -4,
 .BatteryLineYOffset = 49 + 6,
-.BatteryLineYOffset2 = -8+90+4,
-.LogoXOffset = 14,
-.LogoYOffset = 52+1,
-.LogoYOffset2 = -8+23,
-.LogoYOffset3 = -8+90+4,
 .font_size_digits = 32,
 .digit_inset = 23,
 .font_size_battery = 16,
 .font_size_date = 18 + 4,
-.font_size_logo = 14,
-.six_pos_x = 2,
-.six_pos_y = - 38 + 9,
-.twelve_pos_x = - 2 + 1,
-.twelve_pos_y = -2,
 .battery_pos_z = 0,
 .battery_pos_y = 4,
 .battery_line = 51,
 .analogue_hand_a = 10,
 .analogue_hand_b = 0, //was22
-.hour_hand_a = 50,
-.min_hand_a = 34,
-.circle_radius_adj = 17,
-.tick_mask_radius_adj = 12,
 .hands_shadow = 2,
-.QTIconXOffset2 = 8,
-.QTIconYOffset2 = 0,
-.BTIconXOffset2 = 8,
-.BTIconYOffset2 = 0,
 .analogue_hand_c = 0,
 .outertickinset = 6,
 .innertickinset = 11,
@@ -510,69 +325,33 @@ static const UIConfig config = {
 .seconds_circle_radius = 21,
 .seconds_circle_centre_x = 90,
 .seconds_circle_centre_y = 128-2-5,
-.dial_digits_mask_a = {{{90-14,22},{36,7}}},
-.dial_digits_mask_b = {{{90-18,0},{36,26}}},
-.dial_digits_mask_c = {{{90-13,180-26},{28,26}}},
-  .UVDayValueRect = {{{45-7+18+1,79-20+8+3+4+4},{20,14}}},     //UVI value daily forecast max
-  .battery_arc_bounds = {{{37+18,87-20+8+4},{24,24}}},        //UV arc, right of centre, middle row
-  .battery_arc_bounds_centre = {{{37-2+18,87-2-20+8+4},{24+4,24+4}}},    //UVI daily forecast maximum
-.romanadjust = 0
+  .battery_arc_bounds = {{{55,79},{24,24}}},        //UV arc, right of centre, middle row
+.romanadjust = 0,
+.BTIconRect = {{{54,17},{32,20}}},
+.QTIconRect = {{{97,16},{32,20}}}
 
 
 };
 #else // Default for other platforms
 static const UIConfig config = {
-.BottomXPosition = 38,
 .DateBottomYPosition = 40, //126-3+5,
-.BTQTBottomYPosition = 45, //126-3 ,
-.LeftxPosition = 7 - 2,
-.xOffset = 10,
 .yOffset = -7,
-.xOffsetFctxWeekday = 30/2 -1,
-.xOffsetFctxDate = 16/2 +1,
 .yOffsetFctx = 2,
-.xWeekdayOffset = 1,
 .yWeekdayDateOffset = 18 - 2,
-.xDateOffset = 31,
-.ShadowAndMaskWidth = 48-12,
-.WeekdayWidth = 30,
-.DateWidth = 16,
 .WeekdayDateHeight = 11,
-.BTIconYOffset = -20,
-.QTIconYOffset = 18,
 .BatteryYOffset = 40-4,
-.BatteryYOffset2 = -7,
-.BatteryYOffset3 = -7,
 .BatteryLineYOffset = 49 + 6,
-.BatteryLineYOffset2 = -8+84+1,
-.LogoXOffset = 6,
-.LogoYOffset = 52+1,
-.LogoYOffset2 = -8+22,
-.LogoYOffset3 = -8+84,
 .font_size_digits = 28,
 .digit_inset = 10,
 .font_size_battery = 16,
 .font_size_date = 18 + 2,
-.font_size_logo = 14,
-.six_pos_x = 2,
-.six_pos_y = - 38 + 9,
-.twelve_pos_x = - 2 + 1,
-.twelve_pos_y = -2,
 .battery_pos_z = 0,
 .battery_pos_y = 4,
 .battery_line = 51,
 .analogue_hand_a = 1,
 .analogue_hand_b = 0, //was  22
 .analogue_hand_c = 1,
-.hour_hand_a = 35,
-.min_hand_a = 22,
-.circle_radius_adj = 18,
-.tick_mask_radius_adj = 12,
 .hands_shadow = 2,
-.QTIconXOffset2 = 42,
-.QTIconYOffset2 = 23,
-.BTIconXOffset2 = -29,
-.BTIconYOffset2 = 23,
 .corner_radius_minutehand = 15,
 .corner_radius_hourhand = 6,
 .corner_radius_majortickrect = 15,
@@ -600,13 +379,10 @@ static const UIConfig config = {
 .seconds_circle_radius = 18,
 .seconds_circle_centre_x = 72,
 .seconds_circle_centre_y = 117-3,
-.dial_digits_mask_a = {{{72-14,22},{36,7}}},
-.dial_digits_mask_b = {{{72-18,0},{36,26}}},
-.dial_digits_mask_c = {{{72-13,168-26},{28,26}}},
-  .UVDayValueRect = {{{45-7,79-20+8+3+4},{20,14}}},     //UVI value daily forecast max
-  .battery_arc_bounds = {{{37,87-20+8},{24,24}}},        //UV arc, right of centre, middle row
-  .battery_arc_bounds_centre = {{{37-2,87-2-20+8},{24+4,24+4}}},    //UVI daily forecast maximum
-.romanadjust = 1
+  .battery_arc_bounds = {{{37,75},{24,24}}},        //UV arc, right of centre, middle row
+.romanadjust = 1,
+.BTIconRect = {{{36,16},{36,20}}},
+.QTIconRect = {{{75,16},{36,20}}}
 };
 #endif
 
@@ -720,6 +496,7 @@ static void prv_default_settings(void) {
   settings.tz_id = 0;
   settings.tz_offset = 0;
   settings.SmoothSweep = false;
+  snprintf(settings.DateLanguage, sizeof(settings.DateLanguage), "%s", "auto");
 //  settings.BacklightInteraction = false;
 
   #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
@@ -728,6 +505,7 @@ static void prv_default_settings(void) {
   settings.UpSlider = 30;
   settings.WeatherUnit = 0;
   settings.RainSoon = false;
+  settings.WBGTLevel = 0;
 
   #endif
 
@@ -961,6 +739,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *remoteampm_t = dict_find(iter, MESSAGE_KEY_showremoteAMPM);
 
   Tuple *smoothsweep_t = dict_find(iter, MESSAGE_KEY_SmoothSweep);
+  Tuple *datelang_t = dict_find(iter, MESSAGE_KEY_DateLanguage);
 
   //Tuple *backlight_t = dict_find(iter, MESSAGE_KEY_BacklightInteraction);
 
@@ -973,6 +752,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple * iconnow_tuple = dict_find(iter, MESSAGE_KEY_IconNow);
   Tuple * wforetemp_t = dict_find(iter, MESSAGE_KEY_TempFore);
   Tuple * rainsoon_t = dict_find(iter, MESSAGE_KEY_RainSoon);
+  Tuple * wbgtlevel_t = dict_find(iter, MESSAGE_KEY_WBGTLevel);
   //Tuple * rainamount_t = dict_find(iter, MESSAGE_KEY_RainAmount);
   
  
@@ -1010,6 +790,11 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
      settings_changed = true;
   }
 
+  if (wbgtlevel_t){
+    settings.WBGTLevel = (int)wbgtlevel_t->value->int32;
+     settings_changed = true;
+  }
+
   // if (rainamount_t){
   //   snprintf(settings.RainAmount,sizeof(settings.RainAmount),"%s",safe_rain_amount((int)rainamount_t->value->int32));
   //   settings_changed = true;
@@ -1024,6 +809,11 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   //     settings.BacklightInteraction = backlight_t->value->int32 == 1;
     
   //  }
+
+  if (datelang_t) {
+    snprintf(settings.DateLanguage, sizeof(settings.DateLanguage), "%s", datelang_t->value->cstring);
+    settings_changed = true;
+  }
 
   if (smoothsweep_t) {
       settings.SmoothSweep = smoothsweep_t->value->int32 == 1;
@@ -2303,8 +2093,12 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
           graphics_context_set_antialiased(ctx, true);
 
             const char * sys_locale = i18n_get_system_locale();
+            const char * date_lang = (strcmp(settings.DateLanguage, "auto") == 0)
+                            ? sys_locale
+                            : settings.DateLanguage;
+
             char weekday[5];
-            fetchwday(s_weekday, sys_locale, weekday);
+            fetchwday(s_weekday, date_lang, weekday);
 
             char weekdaydraw[10];
             snprintf(weekdaydraw, sizeof(weekdaydraw), "%s", weekday);
@@ -2312,8 +2106,8 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
             char daynow[5];
             snprintf(daynow, sizeof(daynow), "%d", current_date);
 
-            char monthnow[5];
-            fetchmonth(s_month, sys_locale, monthnow);
+            char monthnow[9];
+            fetchmonth(s_month, date_lang, monthnow);
 
             char datenow[15];
 
@@ -2344,7 +2138,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
             graphics_context_set_text_color(ctx, settings.BWDateColor);
            
-      #ifdef DEBUG
+      #ifdef BACKLIGHTON
             //  graphics_draw_text(ctx, "24", FontDate, DateRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
             //  graphics_draw_text(ctx, "WED", FontDate, WeekdayRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
       #else
@@ -2467,14 +2261,18 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
     fctx_set_text_em_height(&fctx, FCTX_Font, font_size_date);
 
     const char * sys_locale = i18n_get_system_locale();
+    const char * date_lang = (strcmp(settings.DateLanguage, "auto") == 0)
+                            ? sys_locale
+                            : settings.DateLanguage;
+
     char weekday[5];
-    fetchwday(s_weekday, sys_locale, weekday);
+    fetchwday(s_weekday, date_lang, weekday);
 
     char weekdaydraw[10];
     snprintf(weekdaydraw, sizeof(weekdaydraw), "%s", weekday);
 
-    char monthnow[5];
-    fetchmonth(s_month, sys_locale, monthnow);
+    char monthnow[10];
+    fetchmonth(s_month, date_lang, monthnow);
 
 
     fctx_begin_fill(&fctx);
@@ -2807,54 +2605,7 @@ static void layer_update_proc_bt(Layer * layer, GContext * ctx){
     return;
   }
 
-      int xPosition;
-      int yPosition;
-      int textboxwidth;
-      int BTIconYOffset;
-
-     
-      #ifdef PBL_BW 
-              xPosition = config.BottomXPosition + 2;
-              yPosition = bounds.size.h - config.BTQTBottomYPosition;
-              textboxwidth = config.ShadowAndMaskWidth/2;
-              BTIconYOffset = config.BTIconYOffset;
-      #elif defined (PBL_PLATFORM_BASALT)
-              xPosition = config.BottomXPosition + 2;
-              yPosition = bounds.size.h - config.BTQTBottomYPosition;
-              textboxwidth = config.ShadowAndMaskWidth/2;
-              BTIconYOffset = config.BTIconYOffset;
-      #elif defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
-              if(quiet_time_is_active()){
-              xPosition = config.BottomXPosition + 2 -52;
-              yPosition = bounds.size.h - config.BTQTBottomYPosition;
-              textboxwidth = config.ShadowAndMaskWidth; ///2;
-              BTIconYOffset = config.BTIconYOffset;
-            }
-            else{
-              xPosition = config.BottomXPosition - 50;
-              yPosition = bounds.size.h - config.BTQTBottomYPosition;
-              textboxwidth = config.ShadowAndMaskWidth;
-              BTIconYOffset = config.BTIconYOffset;
-            }
-      #else
-            if(quiet_time_is_active()){
-              xPosition = config.BottomXPosition + 2;
-              yPosition = bounds.size.h - config.BTQTBottomYPosition;
-              textboxwidth = config.ShadowAndMaskWidth/2;
-              BTIconYOffset = config.BTIconYOffset;
-            }
-            else{
-              xPosition = config.BottomXPosition;
-              yPosition = bounds.size.h - config.BTQTBottomYPosition;
-              textboxwidth = config.ShadowAndMaskWidth;
-              BTIconYOffset = config.BTIconYOffset;
-            }
-        #endif
-     
-
-  GRect BTIconRect =
-    GRect(xPosition + config.xOffset + config.BTIconXOffset2, yPosition + config.yOffset + BTIconYOffset + config.BTIconYOffset2, textboxwidth, 20);
-
+  GRect BTIconRect = config.BTIconRect[0];
 
 #ifdef PBL_COLOR
  graphics_context_set_text_color(ctx, settings.BTQTColor);
@@ -2879,57 +2630,7 @@ static void layer_update_proc_qt(Layer * layer, GContext * ctx){
     }
 
 
-      int xPosition;
-      int yPosition;
-      int textboxwidth;
-      int QTIconYOffset;
-
-
-   
-       
-      #ifdef PBL_BW
-        xPosition = config.BottomXPosition;
-        yPosition = bounds.size.h - config.BTQTBottomYPosition;
-        textboxwidth = config.ShadowAndMaskWidth;
-        QTIconYOffset = 0 - config.QTIconYOffset;
-      #elif defined (PBL_PLATFORM_BASALT)
-        xPosition = config.BottomXPosition;
-        yPosition = bounds.size.h - config.BTQTBottomYPosition;
-        textboxwidth = config.ShadowAndMaskWidth;
-        QTIconYOffset = 0 - config.QTIconYOffset;
-      #elif defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
-        if(connection_service_peek_pebble_app_connection()){
-
-        xPosition = config.BottomXPosition + 50;
-        yPosition = bounds.size.h - config.BTQTBottomYPosition -1;
-        textboxwidth = config.ShadowAndMaskWidth;
-        QTIconYOffset = 0 - config.QTIconYOffset;
-       }
-      else{
-        xPosition = config.BottomXPosition + 50;//+ config.ShadowAndMaskWidth/2 - 2;
-        yPosition = bounds.size.h - config.BTQTBottomYPosition -1 ;
-        textboxwidth = config.ShadowAndMaskWidth/2;
-        QTIconYOffset = 0 - config.QTIconYOffset;
-      }
-      #else
-       if(connection_service_peek_pebble_app_connection()){
-
-        xPosition = config.BottomXPosition;
-        yPosition = bounds.size.h - config.BTQTBottomYPosition -1;
-        textboxwidth = config.ShadowAndMaskWidth;
-        QTIconYOffset = 0 - config.QTIconYOffset;
-       }
-      else{
-        xPosition = config.BottomXPosition + config.ShadowAndMaskWidth/2 - 2;
-        yPosition = bounds.size.h - config.BTQTBottomYPosition -1 ;
-        textboxwidth = config.ShadowAndMaskWidth/2;
-        QTIconYOffset = 0 - config.QTIconYOffset;
-      }
-      #endif
-     
-
-  GRect QTIconRect =
-    GRect(xPosition + config.xOffset + config.QTIconXOffset2, yPosition + config.yOffset + QTIconYOffset + config.QTIconYOffset2, textboxwidth, 20);
+  GRect QTIconRect = config.QTIconRect[0];
 
  quiet_time_icon(); //checks whether quiet time is active
 
@@ -3066,6 +2767,32 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
       graphics_draw_text(ctx, "\U0000F084", FontWeatherIcons, RainIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
       //graphics_draw_text(ctx, RainToDraw, FontWeatherIcons, RainIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
     }
+
+    #ifdef BACKLIGHTON
+    GRect WarningIconRect = config.WarningIconRect[0];
+    graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+    graphics_draw_text(ctx, "\U0000F0ED", FontWeatherIcons, WarningIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+    #else
+    if (settings.WBGTLevel > 0) {
+      // Three distinct glyphs, one per severity level, rather than one
+      // glyph recoloured - F0EC (yellow), F0ED (red), F0EE (black).
+      //GColor warnColor;
+      const char *warnGlyph;
+      switch (settings.WBGTLevel) {
+        // case 1:  warnColor = GColorYellow; warnGlyph = "\U0000F0EE"; break;
+        // case 2:  warnColor = GColorRed;    warnGlyph = "\U0000F0ED"; break;
+        // default: warnColor = GColorBlack;  warnGlyph = "\U0000F0EC"; break; // level 3 and any unexpected value
+        case 1:  warnGlyph = "\U0000F0EC"; break;
+        case 2:  warnGlyph = "\U0000F0ED"; break;
+        default: warnGlyph = "\U0000F0EE"; break; // level 3 and any unexpected value
+      }
+
+      GRect WarningIconRect = config.WarningIconRect[0];
+      //graphics_context_set_text_color(ctx, warnColor);
+      graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+      graphics_draw_text(ctx, warnGlyph, FontWeatherIcons, WarningIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+    }
+    #endif
     
 
     FContext fctx;
@@ -3345,8 +3072,10 @@ static void prv_init(void) {
 ////set larger for emery & gabbro to fix crash on send of extra weather data
   #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
   app_message_open(2048, 2048);
+  #elif defined(PBL_PLATFORM_FLINT) || defined (PBL_PLATFORM_DIORITE) || defined (PBL_PLATFORM_CHALK) || defined (PBL_PLATFORM_BASALT)
+  app_message_open(1024, 1024);
   #else
-  app_message_open(512, 512);
+  app_message_open(1024,1024);
   #endif
   app_message_register_inbox_received(prv_inbox_received_handler);
 

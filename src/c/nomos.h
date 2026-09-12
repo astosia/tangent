@@ -2,7 +2,7 @@
 #include <pebble.h>
 
 // #define MODEL_COUNT 9
-#define SETTINGS_KEY 142
+#define SETTINGS_KEY 146
 
 // typedef struct DialSpec {
 //   GPoint markers[12];
@@ -114,6 +114,7 @@ typedef struct ClaySettings {
   char iconnowstring[4];
   char RainAmount[4];
   bool RainSoon;
+  int WBGTLevel; // 0 = none, 1 = Yellow, 2 = Red, 3 = Black
   GColor UVMaxColor;
   GColor UVNowColor;
   GColor UVArcColor;
@@ -128,5 +129,6 @@ typedef struct ClaySettings {
   char tz_code[7];
   int SubDialChoice;
   bool SmoothSweep;
+  char DateLanguage[6];
   //bool BacklightInteraction;
 } __attribute__((__packed__)) ClaySettings;
