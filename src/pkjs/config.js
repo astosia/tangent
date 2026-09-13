@@ -358,13 +358,6 @@ module.exports = [
         "defaultValue": false
     },
     {
-        "type": "toggle",
-        "messageKey": "RefreshWeatherOnLaunch",
-        "label": "Refresh Weather on Relaunch",
-        "description": "In addition to update interval below, also request fresh weather every time watchface loads. Off = only refresh on the regular interval, keeping last known reading between relaunches",
-        "defaultValue": false
-    },
-    {
         "type": "select",
         "messageKey": "WeatherProv",
         "defaultValue": "ds",
@@ -384,7 +377,7 @@ module.exports = [
         "type": "input",
         "messageKey": "LocationQuery",
         "label": "Location",
-        "description": "Leave blank to use GPS location for weather and sunrise/sunset times. Location search data uses © OpenStreetMap.",
+        "description": "Start typing a city, place name or postcode/zipcode... Leave blank to use GPS location for weather and sunrise/sunset times. Location search data uses ©OpenStreetMap.",
         "attributes": {
           "placeholder": "e.g.: London, UK (leave blank to use GPS)"
         }
@@ -423,6 +416,13 @@ module.exports = [
         "min": 15,
         "max": 120,
         "step": 15
+      },
+      {
+        "type": "toggle",
+        "messageKey": "RefreshWeatherOnLaunch",
+        "label": "Also Refresh Weather on Relaunch",
+        "description": "In addition to update interval above, also request fresh weather every time watchface loads. Off = keeps last known reading between relaunches",
+        "defaultValue": false
       },
       {
         "type": "toggle",
