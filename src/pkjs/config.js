@@ -358,6 +358,13 @@ module.exports = [
         "defaultValue": false
     },
     {
+        "type": "toggle",
+        "messageKey": "RefreshWeatherOnLaunch",
+        "label": "Refresh Weather on Relaunch",
+        "description": "In addition to update interval below, also request fresh weather every time watchface loads. Off = only refresh on the regular interval, keeping last known reading between relaunches",
+        "defaultValue": false
+    },
+    {
         "type": "select",
         "messageKey": "WeatherProv",
         "defaultValue": "ds",

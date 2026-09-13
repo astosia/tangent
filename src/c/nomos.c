@@ -71,7 +71,13 @@ static int seconds;
 static bool showSeconds;
 #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
 static int s_countdown = 30;
-//static int showWeather = 0;
+static time_t s_last_weather_fetch = 0;
+// Stored separately from ClaySettings/SETTINGS_KEY since it's local
+#define WEATHER_FETCH_EPOCH_KEY 248
+#define WEATHER_STALE_ICON "\U0000F03E"
+static bool s_launch_weather_delay = false;
+static AppTimer *s_launch_weather_timer = NULL;
+#define LAUNCH_WEATHER_DELAY_MS 1000
 #endif
 static ClaySettings settings;
 
@@ -409,6 +415,8 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed);
 static void bg_update_proc(Layer *layer, GContext *ctx);
 #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
 static void weather_update_proc(Layer *layer, GContext *ctx);
+static void prv_request_weather_update(void);
+static void prv_launch_weather_delay_callback(void *data);
 #endif
 static void update_logo_date_battery_fctx_layer(Layer *layer, GContext * ctx);
 static void layer_update_proc_battery_line(Layer *layer, GContext * ctx);
@@ -506,6 +514,7 @@ static void prv_default_settings(void) {
   settings.WeatherUnit = 0;
   settings.RainSoon = false;
   settings.WBGTLevel = 0;
+  settings.RefreshWeatherOnLaunch = false;
 
   #endif
 
@@ -665,10 +674,32 @@ static void bluetooth_vibe_icon (bool connected) {
 
 }
 
+#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+static void prv_launch_weather_delay_callback(void *data) {
+  s_launch_weather_timer = NULL;
+  s_launch_weather_delay = false;
+  layer_mark_dirty(s_canvas_weather);
+}
+
+static void prv_request_weather_update(void) {
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  dict_write_uint8(iter, 0, 0);
+  app_message_outbox_send();
+}
+#endif
+
+
 // Load settings from persistent storage
 static void prv_load_settings(void) {
   prv_default_settings();
   persist_read_data(SETTINGS_KEY, &settings, sizeof(settings));
+
+  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  if (persist_exists(WEATHER_FETCH_EPOCH_KEY)) {
+    s_last_weather_fetch = (time_t) persist_read_int(WEATHER_FETCH_EPOCH_KEY);
+  }
+  #endif
 }
 
 // AppMessage inbox handler
@@ -753,6 +784,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple * wforetemp_t = dict_find(iter, MESSAGE_KEY_TempFore);
   Tuple * rainsoon_t = dict_find(iter, MESSAGE_KEY_RainSoon);
   Tuple * wbgtlevel_t = dict_find(iter, MESSAGE_KEY_WBGTLevel);
+  Tuple * refreshonlaunch_t = dict_find(iter, MESSAGE_KEY_RefreshWeatherOnLaunch);
   //Tuple * rainamount_t = dict_find(iter, MESSAGE_KEY_RainAmount);
   
  
@@ -762,6 +794,12 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     settings.UseWeather = useweather_t->value->int32 != 0;
     settings_changed = true;
   }
+
+  if (refreshonlaunch_t) {
+    settings.RefreshWeatherOnLaunch = refreshonlaunch_t->value->int32 != 0;
+    settings_changed = true;
+  }
+
 
   if (frequpdate){
     settings.UpSlider = (int) frequpdate -> value -> int32;
@@ -777,6 +815,8 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   if (iconnow_tuple){
       snprintf(settings.iconnowstring,sizeof(settings.iconnowstring),"%s",safe_weather_condition((int)iconnow_tuple->value->int32));
+      s_last_weather_fetch = time(NULL);
+      persist_write_int(WEATHER_FETCH_EPOCH_KEY, (int32_t) s_last_weather_fetch);
      settings_changed = true;
   }
 
@@ -1432,13 +1472,15 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
       #ifdef DEBUG
         APP_LOG(APP_LOG_LEVEL_DEBUG, "countdown is 0, updated weather at %d", tick_time -> tm_min);
       #endif
-        // Begin dictionary
-        DictionaryIterator * iter;
-        app_message_outbox_begin( & iter);
-        // Add a key-value pair
-        dict_write_uint8(iter, 0, 0);
-        // Send the message!
-        app_message_outbox_send();
+        // // Begin dictionary
+        // DictionaryIterator * iter;
+        // app_message_outbox_begin( & iter);
+        // // Add a key-value pair
+        // dict_write_uint8(iter, 0, 0);
+        // // Send the message!
+        // app_message_outbox_send();
+
+        prv_request_weather_update();
     }
     #endif
 
@@ -2531,9 +2573,6 @@ static void layer_update_proc_tz(Layer *layer, GContext *ctx) {
       int remotehour = g_remote_time.tm_hour % 12;
       int remoteminute = g_remote_time.tm_min;
 
-      // int hour_angle = (((double)remotehour + (double)remoteminute / 60) / 12 * 360) - 90;
-      // int minute_angle = ((double)remoteminute / 60 * 360) - 90;
-
       int hour_angle = ((remotehour * 60 + remoteminute) * 30) / 60 - 90;
       int minute_angle = (remoteminute * 6) - 90;
 
@@ -2740,7 +2779,20 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
 
     char CondToDraw[4];
         //snprintf(CondToDraw, sizeof(CondToDraw), "%s", "\U0000f019");  //settings.iconnowstring);
-        snprintf(CondToDraw, sizeof(CondToDraw), "%s", settings.iconnowstring);
+       
+        // If the weather was fetched more than 1.5x upslider minutes ago, it's stale.  time_t is in seconds, so x 60
+
+        time_t staleAfterSeconds = (time_t)(settings.UpSlider * 90); // 1.5 * 60
+        bool weatherStale = (s_last_weather_fetch == 0) ||
+            ((g_current_epoch - s_last_weather_fetch) > staleAfterSeconds);
+
+        if (s_launch_weather_delay) {
+          snprintf(CondToDraw, sizeof(CondToDraw), "%s", WEATHER_STALE_ICON);
+        } else if (weatherStale) {
+          snprintf(CondToDraw, sizeof(CondToDraw), "%s", WEATHER_STALE_ICON);
+        } else {
+          snprintf(CondToDraw, sizeof(CondToDraw), "%s", settings.iconnowstring);
+        }
     
     if(settings.EnableBatteryLine){
     GRect IconNowRect = config.IconNowRect[0]; 
@@ -2759,13 +2811,10 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
   
     if (settings.RainSoon) {
 
-      // char RainToDraw[4];
-      //   snprintf(RainToDraw, sizeof(RainToDraw), "%s", settings.RainAmount);
-
       GRect RainIconRect = config.RainIconRect[0];
       graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
       graphics_draw_text(ctx, "\U0000F084", FontWeatherIcons, RainIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-      //graphics_draw_text(ctx, RainToDraw, FontWeatherIcons, RainIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+      
     }
 
     #ifdef BACKLIGHTON
@@ -2774,21 +2823,15 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
     graphics_draw_text(ctx, "\U0000F0ED", FontWeatherIcons, WarningIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
     #else
     if (settings.WBGTLevel > 0) {
-      // Three distinct glyphs, one per severity level, rather than one
-      // glyph recoloured - F0EC (yellow), F0ED (red), F0EE (black).
-      //GColor warnColor;
+      // Three distinct glyphs, one per severity level, rather than one glyph  - F0EC (yellow), F0ED (red), F0EE (black).
       const char *warnGlyph;
       switch (settings.WBGTLevel) {
-        // case 1:  warnColor = GColorYellow; warnGlyph = "\U0000F0EE"; break;
-        // case 2:  warnColor = GColorRed;    warnGlyph = "\U0000F0ED"; break;
-        // default: warnColor = GColorBlack;  warnGlyph = "\U0000F0EC"; break; // level 3 and any unexpected value
         case 1:  warnGlyph = "\U0000F0EC"; break;
         case 2:  warnGlyph = "\U0000F0ED"; break;
         default: warnGlyph = "\U0000F0EE"; break; // level 3 and any unexpected value
       }
 
       GRect WarningIconRect = config.WarningIconRect[0];
-      //graphics_context_set_text_color(ctx, warnColor);
       graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
       graphics_draw_text(ctx, warnGlyph, FontWeatherIcons, WarningIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
     }
@@ -2912,6 +2955,14 @@ static void prv_window_load(Window *window) {
 
   #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
   s_countdown = settings.UpSlider;
+  
+  if (settings.UseWeather && settings.RefreshWeatherOnLaunch) {
+    s_launch_weather_delay = true;
+    if (s_launch_weather_timer) { app_timer_cancel(s_launch_weather_timer); }
+    s_launch_weather_timer = app_timer_register(LAUNCH_WEATHER_DELAY_MS, prv_launch_weather_delay_callback, NULL);
+    prv_request_weather_update();
+  }
+
   #endif
 
   time_t temp = time(NULL);

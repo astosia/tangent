@@ -93,18 +93,6 @@ module.exports = function(minified) {
         box.style.display = 'block';
     };
 
-    // var filterTimezones = function(query) {
-    //     if (!query) return [];
-    //     var lower = query.toLowerCase();
-    //     var matches = [];
-    //     for (var i = 0; i < timezonesList.length && matches.length < MAX_SUGGESTIONS; i++) {
-    //         if (timezonesList[i].toLowerCase().indexOf(lower) !== -1) {
-    //             matches.push(timezonesList[i]);
-    //         }
-    //     }
-    //     return matches;
-    // };
-
         var filterTimezones = function(query) {
             if (!query) {
                 // return timezonesList.slice(0, MAX_SUGGESTIONS);
@@ -120,8 +108,7 @@ module.exports = function(minified) {
             return matches;
         };
 
-    // On blur, anything that isn't an exact match to a fetched timezone
-    // gets cleared - this is what actually enforces "must pick from the list".
+    // On blur, anything that isn't an exact match to a fetched timezone gets cleared - this is what enforces "must pick from the list".
     var validateAndMaybeClear = function(inputElement, item, idstate) {
         var value = inputElement.value;
         if (value === '') return; // empty = "disabled", always valid
@@ -183,9 +170,6 @@ module.exports = function(minified) {
             debug.set(tzDebug + "<br>Click 'Fetch Timezones' to retry.");
         }
 
-        // A text input can hold any string, so restoring a previously saved
-        // value doesn't depend on the list having loaded - unlike the old
-        // <select>, which needed a matching <option> injected first.
         if (idstate.get()) {
             item.set(idstate.get());
         }

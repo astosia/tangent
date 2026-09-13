@@ -130,5 +130,6 @@ typedef struct ClaySettings {
   int SubDialChoice;
   bool SmoothSweep;
   char DateLanguage[6];
+  bool RefreshWeatherOnLaunch;
   //bool BacklightInteraction;
 } __attribute__((__packed__)) ClaySettings;
