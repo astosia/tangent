@@ -382,20 +382,27 @@ module.exports = [
       },
       {
         "type": "input",
-        "messageKey": "Lat",
-        "label": "Manual Location - Latitude",
+        "messageKey": "LocationQuery",
+        "label": "Location",
+        "description": "Leave blank to use GPS location for weather and sunrise/sunset times. Location search data uses © OpenStreetMap.",
         "attributes": {
-          "placeholder": "eg: 51.4769 (leave blank to use GPS)"
+          "placeholder": "e.g.: London, UK (leave blank to use GPS)"
         }
       },
       {
         "type": "input",
+        "messageKey": "Lat",
+        "defaultValue": ""
+      },
+      {
+        "type": "input",
         "messageKey": "Long",
-        "label": "Manual Location - Longitude",
-        "description": "Leave both blank to use GPS location for sunrise & sunset times and weather. You can use <a href =https://www.google.com/maps>Google Maps</a> or <a href =https://www.openstreetmap.org/>OpenStreetMap</a> to find latitude & longitude.",
-        "attributes": {
-          "placeholder": "eg: -0.0005 (leave blank to use GPS)"
-        }
+        "defaultValue": ""
+      },
+      {
+        "type": "text",
+        "id": "LOCATION_DEBUG",
+        "defaultValue": ""
       },
       {
         "type": "input",

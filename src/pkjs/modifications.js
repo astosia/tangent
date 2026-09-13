@@ -302,6 +302,326 @@ module.exports = function(minified) {
         }
     };
 
+    ///////////////////// Location search (geocoding) /////////////////////
+    
+    var LOCATION_MIN_QUERY_LENGTH = 3;
+    var LOCATION_DEBOUNCE_MS = 700; // Nominatim's usage policy asks for ~1 req/sec max, and discourages true search-as-you-type
+    var LOCATION_MAX_SUGGESTIONS = 8;
+
+    var locationSuggestionBox = null;
+    var locationDebounceTimer = null;
+    var locationRequestSeq = 0; // guards against an older, slower request clobbering a newer one
+    var selectedLocationDisplay = ""; // the last text that was actually picked from the list (or restored from a previous save)
+    var locationEventsWired = false;
+
+    var getOrCreateLocationSuggestionBox = function(inputElement) {
+        if (locationSuggestionBox) return locationSuggestionBox;
+
+        var parent = inputElement.parentNode;
+        parent.style.position = 'relative';
+
+        locationSuggestionBox = document.createElement('ul');
+        locationSuggestionBox.className = 'location-suggestions';
+        locationSuggestionBox.style.position = 'absolute';
+        locationSuggestionBox.style.top = '100%';
+        locationSuggestionBox.style.left = '0';
+        locationSuggestionBox.style.right = '0';
+        locationSuggestionBox.style.zIndex = '1000';
+        locationSuggestionBox.style.listStyle = 'none';
+        locationSuggestionBox.style.margin = '0';
+        locationSuggestionBox.style.padding = '0';
+        locationSuggestionBox.style.background = '#fff';
+        locationSuggestionBox.style.color = '#222';
+        locationSuggestionBox.style.border = '1px solid #ccc';
+        locationSuggestionBox.style.maxHeight = '200px';
+        locationSuggestionBox.style.overflowY = 'auto';
+        locationSuggestionBox.style.display = 'none';
+
+        parent.insertBefore(locationSuggestionBox, inputElement.nextSibling);
+
+        return locationSuggestionBox;
+    };
+
+    var hideLocationSuggestions = function() {
+        if (locationSuggestionBox) locationSuggestionBox.style.display = 'none';
+    };
+
+    // matches: array of { display, lat, lon }
+    var showLocationSuggestions = function(matches, inputElement, item, latItem, longItem) {
+        var box = getOrCreateLocationSuggestionBox(inputElement);
+        box.innerHTML = '';
+
+        if (!matches.length) {
+            box.style.display = 'none';
+            return;
+        }
+
+        for (var i = 0; i < matches.length; i++) {
+            (function(match) {
+                var li = document.createElement('li');
+                li.textContent = match.display;
+                li.style.padding = '6px 8px';
+                li.style.cursor = 'pointer';
+                li.style.color = '#222';
+                li.style.background = '#fff';
+
+                li.addEventListener('mouseenter', function() {
+                    li.style.background = '#eee';
+                });
+                li.addEventListener('mouseleave', function() {
+                    li.style.background = '#fff';
+                });
+
+                // mousedown (not click) fires before the input's blur handler,
+                // so the value is set before the blur-time validation runs.
+                li.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    inputElement.value = match.display;
+                    item.set(match.display);
+                    latItem.set(String(match.lat));
+                    longItem.set(String(match.lon));
+                    selectedLocationDisplay = match.display;
+                    hideLocationSuggestions();
+                });
+
+                box.appendChild(li);
+            })(matches[i]);
+        }
+
+        box.style.display = 'block';
+    };
+
+    var updateLocationDebug = function(message) {
+        console.log("[Location Debug] " + message);
+        var debug = config.getItemById("LOCATION_DEBUG");
+        if (debug) {
+            debug.show();
+            debug.set(message);
+        }
+    };
+
+    var hideLocationDebug = function() {
+        var debug = config.getItemById("LOCATION_DEBUG");
+        if (debug) debug.hide();
+    };
+
+    // Builds the short "name, region, country" label used before any
+    // duplicate-disambiguation is applied.
+    var buildLocationDisplay = function(namePart, regionPart, countryPart) {
+        var parts = [namePart];
+        if (regionPart && regionPart !== namePart) parts.push(regionPart);
+        if (countryPart) parts.push(countryPart);
+        return parts.join(', ');
+    };
+
+    // Nominatim (OpenStreetMap) sometimes returns two genuinely different
+    // places that reduce to the same "name, region, country" label
+    // This finds any duplicate labels in the result set
+    // and re-labels just those with more specific info (county first, then
+    // raw coordinates as a last resort), so the common case stays a clean
+    // short list and only genuine collisions get the extra detail.
+    var disambiguateLocationMatches = function(rawMatches) {
+        var countByDisplay = {};
+        var i;
+        for (i = 0; i < rawMatches.length; i++) {
+            var d = rawMatches[i].display;
+            countByDisplay[d] = (countByDisplay[d] || 0) + 1;
+        }
+
+        for (i = 0; i < rawMatches.length; i++) {
+            var m = rawMatches[i];
+            if (countByDisplay[m.display] <= 1) continue; // unique already, leave as-is
+
+            if (m.county && m.county !== m.name) {
+                m.display = buildLocationDisplay(m.name + ' (' + m.county + ')', m.region, m.country);
+            } else {
+                // No county to fall back on (or it didn't help) - coordinates
+                // are always unique and better than an ambiguous duplicate.
+                m.display = m.display + ' [' + m.lat.toFixed(3) + ', ' + m.lon.toFixed(3) + ']';
+            }
+        }
+
+        // A second pass in case adding the county still left a tie (rare -
+        // e.g. same village name in the same county twice in OSM data).
+        var countAfter = {};
+        for (i = 0; i < rawMatches.length; i++) {
+            countAfter[rawMatches[i].display] = (countAfter[rawMatches[i].display] || 0) + 1;
+        }
+        for (i = 0; i < rawMatches.length; i++) {
+            var m2 = rawMatches[i];
+            if (countAfter[m2.display] > 1 && m2.display.indexOf('[') === -1) {
+                m2.display = m2.display + ' [' + m2.lat.toFixed(3) + ', ' + m2.lon.toFixed(3) + ']';
+            }
+        }
+
+        return rawMatches;
+    };
+
+    // Queries Nominatim (OpenStreetMap's geocoder - free, no API key, but
+    // usage policy asks for max ~1 request/second and discourages true
+    // search-as-you-type, hence the longer debounce and minimum query
+    // length below). Resolves an array of { display, lat, lon }, or an
+    // empty array on no matches/error (never rejects, so the caller doesn't
+    // need its own catch).
+    var geocodeLocation = function(query) {
+        var thisRequestSeq = ++locationRequestSeq;
+
+        return new Promise(function(resolve) {
+            var url = 'https://nominatim.openstreetmap.org/search' +
+                '?q=' + encodeURIComponent(query) +
+                '&format=jsonv2' +
+                '&addressdetails=1' +
+                '&limit=' + LOCATION_MAX_SUGGESTIONS;
+
+            var xhr = new XMLHttpRequest();
+            var timeoutId = setTimeout(function() {
+                xhr.abort();
+                if (thisRequestSeq === locationRequestSeq) {
+                    updateLocationDebug("Location search timed out.");
+                }
+                resolve([]);
+            }, 8000);
+
+            xhr.onload = function() {
+                clearTimeout(timeoutId);
+                if (thisRequestSeq !== locationRequestSeq) {
+                    // A newer keystroke already fired another request - drop this stale one.
+                    resolve([]);
+                    return;
+                }
+                if (xhr.status !== 200) {
+                    updateLocationDebug("Location search failed (HTTP " + xhr.status + ").");
+                    resolve([]);
+                    return;
+                }
+                try {
+                    var results = JSON.parse(xhr.responseText) || [];
+                    var rawMatches = [];
+                    for (var i = 0; i < results.length; i++) {
+                        var r = results[i];
+                        var addr = r.address || {};
+                        var name = addr.village || addr.town || addr.city || addr.hamlet ||
+                            addr.suburb || addr.municipality || addr.county ||
+                            (r.display_name ? r.display_name.split(',')[0].trim() : 'Unknown');
+                        var region = addr.state || addr.region || '';
+                        var country = addr.country || '';
+                        var county = addr.county || '';
+                        var lat = parseFloat(r.lat);
+                        var lon = parseFloat(r.lon);
+
+                        if (isNaN(lat) || isNaN(lon)) continue;
+
+                        rawMatches.push({
+                            display: buildLocationDisplay(name, region, country),
+                            name: name,
+                            region: region,
+                            country: country,
+                            county: county,
+                            lat: lat,
+                            lon: lon
+                        });
+                    }
+                    hideLocationDebug();
+                    resolve(disambiguateLocationMatches(rawMatches));
+                } catch (e) {
+                    updateLocationDebug("Location search error: " + e.message);
+                    resolve([]);
+                }
+            };
+
+            xhr.onerror = function() {
+                clearTimeout(timeoutId);
+                if (thisRequestSeq === locationRequestSeq) {
+                    updateLocationDebug("Location search network error.");
+                }
+                resolve([]);
+            };
+
+            xhr.open('GET', url);
+            xhr.send();
+        });
+    };
+
+    // On blur, anything that isn't the exact text of a picked suggestion
+    // gets cleared - along with the lat/lon that went with it - which is
+    // what enforces "must pick from the list". Empty is always valid and
+    // just means "use GPS".
+    var validateAndMaybeClearLocation = function(inputElement, item, latItem, longItem) {
+        var value = inputElement.value;
+        if (value === '') {
+            item.set('');
+            latItem.set('');
+            longItem.set('');
+            selectedLocationDisplay = '';
+            return;
+        }
+
+        if (value !== selectedLocationDisplay) {
+            inputElement.value = '';
+            item.set('');
+            latItem.set('');
+            longItem.set('');
+            selectedLocationDisplay = '';
+        }
+    };
+
+    var wireLocationInputEvents = function(item, latItem, longItem) {
+        if (locationEventsWired) return;
+        locationEventsWired = true;
+
+        var inputElement = getInputElement(item);
+        inputElement.setAttribute('autocomplete', 'off');
+        inputElement.setAttribute('placeholder', 'e.g.: London, UK (leave blank to use GPS)');
+
+        inputElement.addEventListener('input', function() {
+            var query = inputElement.value;
+
+            if (locationDebounceTimer) {
+                clearTimeout(locationDebounceTimer);
+                locationDebounceTimer = null;
+            }
+
+            if (query.length < LOCATION_MIN_QUERY_LENGTH) {
+                hideLocationSuggestions();
+                return;
+            }
+
+            locationDebounceTimer = setTimeout(function() {
+                geocodeLocation(query).then(function(matches) {
+                    showLocationSuggestions(matches, inputElement, item, latItem, longItem);
+                });
+            }, LOCATION_DEBOUNCE_MS);
+        });
+
+        inputElement.addEventListener('blur', function() {
+            // Delay so a suggestion's mousedown handler can run first.
+            setTimeout(function() {
+                validateAndMaybeClearLocation(inputElement, item, latItem, longItem);
+                hideLocationSuggestions();
+            }, 150);
+        });
+    };
+
+    var initLocationSearch = function() {
+        var item = config.getItemByMessageKey("LocationQuery");
+        var latItem = config.getItemByMessageKey("Lat");
+        var longItem = config.getItemByMessageKey("Long");
+
+        if (!item || !latItem || !longItem) return;
+
+        // Lat/Long are only ever written by picking a suggestion (or GPS
+        // fallback when blank) - never shown or hand-edited directly.
+        latItem.hide();
+        longItem.hide();
+        hideLocationDebug();
+
+        // Whatever was saved from a previous session is trusted as-is,
+        // since Lat/Long were already populated to match it back then.
+        selectedLocationDisplay = item.get() || "";
+
+        wireLocationInputEvents(item, latItem, longItem);
+    };
+
     var TZ_SUBDIAL_VALUE = 5; // matches "Second Timezone" option in SubDialChoice
     var SECONDS_SUBDIAL_VALUES_A = [2]; // "Seconds, with Timeout" 
     var SECONDS_SUBDIAL_VALUES_B = [2,6]; // "Month hand + seconds on shake" 
@@ -440,6 +760,9 @@ module.exports = function(minified) {
 
     config.on(config.EVENTS.AFTER_BUILD, function () {
         built = true;
+
+        initLocationSearch();
+
         var stateItem = config.getItemByMessageKey("TZ_ID_STATE");
         if (stateItem) stateItem.hide();
 
