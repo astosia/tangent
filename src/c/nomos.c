@@ -1062,8 +1062,11 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     //    APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme black selected");
           } else if (strcmp(bwthemeselect_t->value->cstring, "cu") == 0) {
               // Set the theme for "cu" and handle custom colors
-              settings.BWDateColor = GColorFromHEX(bwdate_color_t->value->int32);
+                  if (bwdate_color_t) {
+                    settings.DateColor = GColorFromHEX(date_color_t->value->int32);
                     layer_mark_dirty(s_canvas_layer);
+                    layer_mark_dirty(s_date_battery_logo_layer);
+                  }
 
                   if (bwbg_color1_t) {
                     settings.BWBackgroundColor1 = GColorFromHEX(bwbg_color1_t->value->int32);

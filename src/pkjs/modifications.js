@@ -805,4 +805,6 @@ module.exports = function(minified) {
         }
         updateWeatherSectionVisibility();
     });
+
+    
 };
