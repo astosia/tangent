@@ -54,7 +54,6 @@ typedef struct ClaySettings {
   char tempstring[6];
   char temphistring[12];
   char iconnowstring[4];
-  char RainAmount[4];
   bool RainSoon;
   int WBGTLevel; // 0 = none, 1 = Yellow, 2 = Red, 3 = Black
   bool AlwaysShowSubDial;

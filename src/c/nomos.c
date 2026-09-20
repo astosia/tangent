@@ -8,6 +8,15 @@
 #include <pebble-fctx/fpath.h>
 #include <pebble-fctx/ffont.h>
 
+// Weather (and the extra layers/fonts/settings it needs) is only built so far for the large-screen platforms
+#if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+  #define HAS_WEATHER
+#endif
+
+#ifndef ARRAY_LENGTH
+  #define ARRAY_LENGTH(a) (sizeof(a) / sizeof((a)[0]))
+#endif
+
 ////remember to comment out before publishing!!!!
 //#define BACKLIGHTON   ///Use this for ShareX screencapture GIFs
 //#define DEBUG         ///Use this for debugging and showing max size of complications
@@ -20,13 +29,11 @@
 #endif
 
 
-
 // Main window and layers
 static Window *s_window;
 static Layer *s_canvas_layer;
 static Layer *s_bg_layer;
 static Layer *s_dial_layer;
-//static Layer *s_dial_digits_layer;
 static Layer *s_date_battery_logo_layer;
 static Layer *s_canvas_second_hand;
 static Layer *s_canvas_month_hand;
@@ -35,7 +42,7 @@ static Layer *s_canvas_comp_bg;
 static Layer *s_canvas_bt_icon;
 static Layer *s_canvas_qt_icon;
 static Layer *s_canvas_battery;
-#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+#ifdef HAS_WEATHER
 static Layer *s_canvas_weather;
 #endif
 
@@ -52,7 +59,7 @@ static GFont
     #endif
     FontBTQTIcons;
 
-#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+#ifdef HAS_WEATHER
 static GFont
     FontWeatherIcons;
 #endif
@@ -69,7 +76,7 @@ static int s_hours; //24h version
 static int s_month;
 static int seconds;
 static bool showSeconds;
-#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+#ifdef HAS_WEATHER
 static int s_countdown = 30;
 static time_t s_last_weather_fetch = 0;
 // Stored separately from ClaySettings/SETTINGS_KEY since it's local
@@ -412,8 +419,10 @@ static void prv_default_settings(void);
 static void prv_load_settings(void);
 static void prv_inbox_received_handler(DictionaryIterator *iter, void *context);
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed);
+static void update_time_state(struct tm *tick_time);
+static void refresh_current_time(void);
 static void bg_update_proc(Layer *layer, GContext *ctx);
-#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+#ifdef HAS_WEATHER
 static void weather_update_proc(Layer *layer, GContext *ctx);
 static void prv_request_weather_update(void);
 static void prv_launch_weather_delay_callback(void *data);
@@ -496,7 +505,7 @@ static void prv_default_settings(void) {
   settings.SmoothSweep = false;
   snprintf(settings.DateLanguage, sizeof(settings.DateLanguage), "%s", "auto");
 
-  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  #ifdef HAS_WEATHER
 
   settings.UseWeather = false;
   settings.UpSlider = 30;
@@ -513,7 +522,7 @@ static void prv_default_settings(void) {
 static int REMOTE_TIME_OFFSET_HOURS = 0;
 static int REMOTE_TIME_OFFSET_MINUTES = 0;
 
-void update_offset_vars(int32_t total_seconds) {
+static void update_offset_vars(int32_t total_seconds) {
   
     int32_t abs_seconds = (total_seconds < 0) ? -total_seconds : total_seconds;
 
@@ -539,13 +548,10 @@ static AppTimer *s_timeout_timer;
 static AppTimer *s_smooth_sweep_timer;
 
 
-
-
 static bool second_hand_is_active(void) {
   return (showSeconds) &&  //|| settings.AlwaysShowSubDial) &&
          (settings.SubDialChoice == 1 || settings.SubDialChoice == 2 || settings.SubDialChoice == 6);
 }
-
 
 
 static void smooth_sweep_timer_handler(void *context) {
@@ -617,7 +623,6 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
       // Only subscribe to second ticks if not already subscribed
       if (!showSeconds) {
           tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
-      //   layer_mark_dirty(s_canvas_second_hand);
       }
       
       showSeconds = true;
@@ -656,7 +661,7 @@ static void bluetooth_vibe_icon (bool connected) {
 
 }
 
-#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+#ifdef HAS_WEATHER
 static void prv_launch_weather_delay_callback(void *data) {
   s_launch_weather_timer = NULL;
   s_launch_weather_delay = false;
@@ -677,11 +682,103 @@ static void prv_load_settings(void) {
   prv_default_settings();
   persist_read_data(SETTINGS_KEY, &settings, sizeof(settings));
 
-  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  #ifdef HAS_WEATHER
   if (persist_exists(WEATHER_FETCH_EPOCH_KEY)) {
     s_last_weather_fetch = (time_t) persist_read_int(WEATHER_FETCH_EPOCH_KEY);
   }
   #endif
+}
+
+// ---- Redraw helpers --------------------------------------------------------
+
+// The dial, digits and date layers all depend on hand size/shape settings.
+static void mark_dial_layers_dirty(void) {
+  layer_mark_dirty(s_bg_layer);
+  layer_mark_dirty(s_canvas_layer);
+  layer_mark_dirty(s_date_battery_logo_layer);
+}
+
+// Redraws every layer. The bluetooth/quiet-time icons only need it when colours change.
+static void mark_all_layers_dirty(bool include_icons) {
+  Layer *layers[] = {
+    s_bg_layer, s_canvas_layer, s_dial_layer, s_date_battery_logo_layer,
+    s_canvas_second_hand, s_canvas_month_hand, s_canvas_battery,
+    #ifdef HAS_WEATHER
+    s_canvas_weather,
+    #endif
+    s_canvas_bt_icon, s_canvas_qt_icon,
+  };
+  size_t count = ARRAY_LENGTH(layers) - (include_icons ? 0 : 2);
+  for (size_t i = 0; i < count; i++) {
+    layer_mark_dirty(layers[i]);
+  }
+}
+
+// ---- Theme helpers ---------------------------------------------------------
+
+// B&W themes are just a foreground/background pair. The minute-hand shadow is
+// dark grey when shadows are on, otherwise it blends into the background.
+static void apply_bw_theme(GColor fg, GColor bg, Tuple *shadow_t) {
+  if (shadow_t) {
+    settings.BWShadowOn = shadow_t->value->int32 == 1;
+  }
+  settings.BWBackgroundColor1 = bg;
+  settings.BWSubDialColor = bg;
+  settings.BWMinuteHandShadowColor = settings.BWShadowOn ? GColorDarkGray : bg;
+  settings.BWDateColor = fg;
+  settings.BWSecondsHandColor = fg;
+  settings.BWMonthHandColor = fg;
+  settings.BWMinHandBatLineColor = fg;
+  settings.BWHourDigitsColor = fg;
+  settings.BWMajorTickColor = fg;
+  settings.BWBTQTColor = fg;
+}
+
+typedef struct {
+  const char *id;
+  GColor bg;            // background, also used for the sub-dial
+  GColor shadow;        // minute-hand shadow when shadows are on (off = same as bg)
+  GColor minor_tick;
+  GColor text;          // date, hour digits and major ticks
+  GColor minutes_hand;
+  GColor accent;        // seconds hand and month hand
+  GColor battery_line;
+  GColor btqt;          // bluetooth / quiet-time icons
+} ColourTheme;
+
+static const ColourTheme COLOUR_THEMES[] = {
+  { "wh", GColorWhite,     GColorBabyBlueEyes,   GColorBlack,           GColorBlack,                 GColorCobaltBlue,            GColorOrange,        GColorOrange,        GColorDarkGray },
+  { "bl", GColorBlack,     GColorDarkGray,       GColorDarkGray,        GColorYellow,                GColorWhite,                 GColorWhite,         GColorYellow,        GColorLightGray },
+  { "bu", GColorOxfordBlue, GColorBlack,         GColorPictonBlue,      GColorYellow,                GColorWhite,                 GColorRed,           GColorRed,           GColorPictonBlue },
+  { "pl", GColorPurple,    GColorImperialPurple, GColorImperialPurple,  GColorRichBrilliantLavender, GColorRichBrilliantLavender, GColorBulgarianRose, GColorBulgarianRose, GColorImperialPurple },
+  { "gr", GColorBlack,     GColorDarkGreen,      GColorDarkGreen,       GColorBrightGreen,           GColorBrightGreen,           GColorPastelYellow,  GColorPastelYellow,  GColorDarkGreen },
+};
+
+// Applies the preset theme called `id`. Returns false if `id` isn't a preset (e.g. "cu" for custom).
+static bool apply_colour_theme(const char *id, Tuple *shadow_t) {
+  for (size_t i = 0; i < ARRAY_LENGTH(COLOUR_THEMES); i++) {
+    const ColourTheme *t = &COLOUR_THEMES[i];
+    if (strcmp(id, t->id) != 0) {
+      continue;
+    }
+    if (shadow_t) {
+      settings.ShadowOn = shadow_t->value->int32 == 1;
+    }
+    settings.BackgroundColor1 = t->bg;
+    settings.SubDialColor = t->bg;
+    settings.MinuteHandShadowColor = settings.ShadowOn ? t->shadow : t->bg;
+    settings.MinorTickColor = t->minor_tick;
+    settings.DateColor = t->text;
+    settings.HourDigitsColor = t->text;
+    settings.MajorTickColor = t->text;
+    settings.MinutesHandColor = t->minutes_hand;
+    settings.SecondsHandColor = t->accent;
+    settings.MonthHandColor = t->accent;
+    settings.BatteryLineColor = t->battery_line;
+    settings.BTQTColor = t->btqt;
+    return true;
+  }
+  return false;
 }
 
 // AppMessage inbox handler
@@ -740,9 +837,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *bwsubdial_t = dict_find(iter, MESSAGE_KEY_BWSubDialColor);
   Tuple *roman_t = dict_find(iter, MESSAGE_KEY_Roman);
 
-  //Tuple *tzmode_t = dict_find(iter, MESSAGE_KEY_TZ_MODE);
   Tuple *subdialchoice_t = dict_find(iter,MESSAGE_KEY_SubDialChoice);
-  //Tuple *tzid_t = dict_find(iter, MESSAGE_KEY_TZ_ID);
   Tuple *tzoffset_t = dict_find(iter, MESSAGE_KEY_TZ_OFFSET);
   Tuple *remoteampm_t = dict_find(iter, MESSAGE_KEY_showremoteAMPM);
 
@@ -750,7 +845,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *datelang_t = dict_find(iter, MESSAGE_KEY_DateLanguage);
 
   ///////Weather
-  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  #ifdef HAS_WEATHER
   Tuple * useweather_t = dict_find(iter, MESSAGE_KEY_UseWeather);
   Tuple * frequpdate = dict_find(iter, MESSAGE_KEY_UpSlider);
 
@@ -837,24 +932,15 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   layer_mark_dirty(s_canvas_comp_bg);
   }
 
-  // if(tzid_t) {
-  // settings.tz_id = (int)tzid_t->value->int32;
-  // time_t now = time(NULL);
-  // tick_handler(localtime(&now), MINUTE_UNIT);
-  // // layer_mark_dirty(g_layer);
-  // }
-
-  if(tzoffset_t) {
-  settings.tz_offset = (int)tzoffset_t->value->int32;
+  if (tzoffset_t) {
+    settings.tz_offset = (int)tzoffset_t->value->int32;
     if (settings.tz_offset != -1) {
-    update_offset_vars(settings.tz_offset);
+      update_offset_vars(settings.tz_offset);
     }
-  //update_offset_vars(settings.tz_offset);
-  time_t now = time(NULL);
-  struct tm *tick_time = localtime(&now);
-  tick_handler(tick_time, MINUTE_UNIT);
-  layer_mark_dirty(s_canvas_tz);
-  layer_mark_dirty(s_canvas_comp_bg);
+    refresh_current_time();
+    update_time_state(prv_tick_time);
+    layer_mark_dirty(s_canvas_tz);
+    layer_mark_dirty(s_canvas_comp_bg);
   }
 
 
@@ -872,53 +958,39 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   if (minocent_t) {
     settings.MinuteCentreSize = (int) minocent_t -> value -> int32;
-    layer_mark_dirty(s_bg_layer);
-    layer_mark_dirty(s_canvas_layer);
-    layer_mark_dirty(s_date_battery_logo_layer);
+    mark_dial_layers_dirty();
   }
 
   if (hrocent_t) {
     settings.HourCentreSize = (int) hrocent_t -> value -> int32;
-    layer_mark_dirty(s_bg_layer);
-    layer_mark_dirty(s_canvas_layer);
-    layer_mark_dirty(s_date_battery_logo_layer);
+    mark_dial_layers_dirty();
   }
 
   if (icent_t) {
     settings.InnerCentreSize = (int) icent_t -> value -> int32;
-    layer_mark_dirty(s_bg_layer);
-    layer_mark_dirty(s_canvas_layer);
-    layer_mark_dirty(s_date_battery_logo_layer);
+    mark_dial_layers_dirty();
   }
 
   if (minhand_t) {
     settings.MinuteHandThickness = (int) minhand_t -> value -> int32;
-    layer_mark_dirty(s_bg_layer);
-    layer_mark_dirty(s_canvas_layer);
-    layer_mark_dirty(s_date_battery_logo_layer);
+    mark_dial_layers_dirty();
     layer_mark_dirty(s_canvas_month_hand);
     layer_mark_dirty(s_canvas_second_hand);
   }
 
   if (hrhand_t) {
     settings.HourHandThickness = (int) hrhand_t -> value -> int32;
-    layer_mark_dirty(s_bg_layer);
-    layer_mark_dirty(s_canvas_layer);
-    layer_mark_dirty(s_date_battery_logo_layer);
+    mark_dial_layers_dirty();
   }
 
   if (back_t) {
     settings.BackSize = (int) back_t -> value -> int32;
-    layer_mark_dirty(s_bg_layer);
-    layer_mark_dirty(s_canvas_layer);
-    layer_mark_dirty(s_date_battery_logo_layer);
+    mark_dial_layers_dirty();
   }
 
   if (backlen_t) {
     settings.BackLen = (int) backlen_t -> value -> int32;
-    layer_mark_dirty(s_bg_layer);
-    layer_mark_dirty(s_canvas_layer);
-    layer_mark_dirty(s_date_battery_logo_layer);
+    mark_dial_layers_dirty();
   }
 
   if(majort_t){
@@ -940,12 +1012,12 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   
   if (vibe_t) {
-    strncpy(settings.VibeMode, vibe_t->value->cstring, sizeof(settings.VibeMode)); 
+    snprintf(settings.VibeMode, sizeof(settings.VibeMode), "%s", vibe_t->value->cstring);
     layer_mark_dirty(s_canvas_bt_icon);
   }
 
   if (dateform_t) {
-    strncpy(settings.DateFormat, dateform_t->value->cstring, sizeof(settings.DateFormat)); 
+    snprintf(settings.DateFormat, sizeof(settings.DateFormat), "%s", dateform_t->value->cstring);
     layer_mark_dirty(s_date_battery_logo_layer);
   }
 
@@ -1009,61 +1081,17 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
 
   if (bwthemeselect_t) {
-          // Compare the string value received from the phone
-          if (strcmp(bwthemeselect_t->value->cstring, "wh") == 0) {
-              // Set the theme and other settings for "wh"
-                    settings.BWDateColor = GColorBlack;
-                    if (bwshadowon_t) {
-                      settings.BWShadowOn = bwshadowon_t->value->int32 == 1;
-                    }
-                        if(settings.BWShadowOn){
-                          settings.BWMinuteHandShadowColor = GColorDarkGray;
-                        }
-                        else {
-                        settings.BWMinuteHandShadowColor = GColorWhite;
-                        }
-                    settings.BWBackgroundColor1 = GColorWhite;
-                    settings.BWSubDialColor = GColorWhite;
-                    settings.BWSecondsHandColor = GColorBlack;
-                    settings.BWMonthHandColor = GColorBlack;
-                    settings.BWMinHandBatLineColor = GColorBlack;
-                    settings.BWHourDigitsColor = GColorBlack;
-                    settings.BWMajorTickColor = GColorBlack;
-                    settings.BWBTQTColor = GColorBlack;
-                    // settings.UVArcColor = GColorLightGray;
-                    // settings.UVMaxColor = GColorWhite;
-                    // settings.UVNowColor = GColorWhite;
-                      theme_settings_changed = true;
-                    //    APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme white selected");
-          } else if (strcmp(bwthemeselect_t->value->cstring, "bl") == 0) {
-              // Set the theme and other settings for "bl"
-                    settings.BWDateColor = GColorWhite;
-                    settings.BWBackgroundColor1 = GColorBlack;
-                    settings.BWSubDialColor = GColorBlack;
-                    if (bwshadowon_t) {
-                      settings.BWShadowOn = bwshadowon_t->value->int32 == 1;
-                    }
-                        if(settings.BWShadowOn){
-                          settings.BWMinuteHandShadowColor = GColorDarkGray;
-                        }
-                        else {
-                        settings.BWMinuteHandShadowColor = GColorBlack;
-                        }
-                    settings.BWSecondsHandColor = GColorWhite;
-                    settings.BWMonthHandColor = GColorWhite;
-                    settings.BWMinHandBatLineColor = GColorWhite;
-                    settings.BWHourDigitsColor = GColorWhite;
-                    settings.BWMajorTickColor = GColorWhite;
-                    settings.BWBTQTColor = GColorWhite;
-                    // settings.UVArcColor = GColorDarkGray;
-                    // settings.UVMaxColor = GColorBlack;
-                    // settings.UVNowColor = GColorBlack;
-                      theme_settings_changed = true;
-                    //    APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme black selected");
-          } else if (strcmp(bwthemeselect_t->value->cstring, "cu") == 0) {
+          const char *bw_theme = bwthemeselect_t->value->cstring;
+          if (strcmp(bw_theme, "wh") == 0) {
+              apply_bw_theme(GColorBlack, GColorWhite, bwshadowon_t);
+              theme_settings_changed = true;
+          } else if (strcmp(bw_theme, "bl") == 0) {
+              apply_bw_theme(GColorWhite, GColorBlack, bwshadowon_t);
+              theme_settings_changed = true;
+          } else if (strcmp(bw_theme, "cu") == 0) {
               // Set the theme for "cu" and handle custom colors
                   if (bwdate_color_t) {
-                    settings.DateColor = GColorFromHEX(date_color_t->value->int32);
+                    settings.BWDateColor = GColorFromHEX(bwdate_color_t->value->int32);
                     layer_mark_dirty(s_canvas_layer);
                     layer_mark_dirty(s_date_battery_logo_layer);
                   }
@@ -1119,157 +1147,15 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     layer_mark_dirty(s_canvas_bt_icon);
                     layer_mark_dirty(s_canvas_qt_icon);
                   }
-                  //  if (uvarccol_t){ settings.UVArcColor = GColorFromHEX(uvarccol_t-> value -> int32);}
-                  //  if (uvmaxcol_t){settings.UVMaxColor = GColorFromHEX(uvmaxcol_t-> value -> int32);}
-                  //  if (uvnowcol_t){settings.UVNowColor = GColorFromHEX(uvnowcol_t-> value -> int32);}
-                  //   layer_mark_dirty(s_canvas_weather);
                   theme_settings_changed = true;
-                  //  APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme custom selected");
                 }
           }
 /////////////////////////////////////
   if (themeselect_t) {
-          // Compare the string value received from the phone
-          if (strcmp(themeselect_t->value->cstring, "wh") == 0) {
-              // Set the theme and other settings for "wh"
-                    if (shadowon_t) {
-                      settings.ShadowOn = shadowon_t->value->int32 == 1;
-                    }
-                        if(settings.ShadowOn){
-                          settings.MinuteHandShadowColor = GColorBabyBlueEyes;
-                        }
-                        else {
-                        settings.MinuteHandShadowColor = GColorWhite;
-                        }
-                    settings.BackgroundColor1 = GColorWhite;
-                    settings.SubDialColor = GColorWhite;
-                    settings.MinorTickColor = GColorBlack;
-                    settings.DateColor = GColorBlack;
-                    settings.HourDigitsColor = GColorBlack;
-                    settings.MinutesHandColor = GColorCobaltBlue;
-                    settings.SecondsHandColor = GColorOrange;
-                    settings.MonthHandColor = GColorOrange;
-                    settings.MajorTickColor = GColorBlack;
-                    settings.BatteryLineColor = GColorOrange;
-                    settings.BTQTColor = GColorDarkGray;
-                    // settings.UVArcColor = GColorLightGray;
-                    // settings.UVMaxColor = GColorWhite;
-                    // settings.UVNowColor = GColorRed;
-                      theme_settings_changed = true;
-                    //    APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme white selected");
-          } else if (strcmp(themeselect_t->value->cstring, "bl") == 0) {
-              // Set the theme and other settings for "bl"
-
-                    settings.BackgroundColor1 = GColorBlack;
-                    settings.SubDialColor = GColorBlack;
-                    if (shadowon_t) {
-                      settings.ShadowOn = shadowon_t->value->int32 == 1;
-                    }
-                        if(settings.ShadowOn){
-                          settings.MinuteHandShadowColor = GColorDarkGray;
-                        }
-                        else {
-                        settings.MinuteHandShadowColor = GColorBlack;
-                        }
-                    settings.MinorTickColor = GColorDarkGray;
-                    settings.DateColor = GColorYellow;
-                    settings.HourDigitsColor = GColorYellow;
-                    settings.MinutesHandColor = GColorWhite;
-                    settings.SecondsHandColor = GColorWhite;
-                    settings.MonthHandColor = GColorWhite;
-                    settings.MajorTickColor = GColorYellow;
-                    settings.BatteryLineColor = GColorYellow;
-                    settings.BTQTColor = GColorLightGray;
-                    // settings.UVArcColor = GColorLightGray;
-                    // settings.UVMaxColor = GColorWhite;
-                    // settings.UVNowColor = GColorRed;
-                      theme_settings_changed = true;
-                      //  APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme black selected");
-          } else if (strcmp(themeselect_t->value->cstring, "bu") == 0) {
-              // Set the theme and other settings for "bl"
-
-                    settings.BackgroundColor1 = GColorOxfordBlue;
-                    settings.SubDialColor = GColorOxfordBlue;
-                    if (shadowon_t) {
-                      settings.ShadowOn = shadowon_t->value->int32 == 1;
-                    }
-                        if(settings.ShadowOn){
-                          settings.MinuteHandShadowColor = GColorBlack;
-                        }
-                        else {
-                        settings.MinuteHandShadowColor = GColorOxfordBlue;
-                        }
-                    settings.MinorTickColor = GColorPictonBlue;
-                    settings.DateColor = GColorYellow;
-                    settings.HourDigitsColor = GColorYellow;
-                    settings.MinutesHandColor = GColorWhite;
-                    settings.SecondsHandColor = GColorRed;
-                    settings.MonthHandColor = GColorRed;
-                    settings.MajorTickColor = GColorYellow;
-                    settings.BatteryLineColor = GColorRed;
-                    settings.BTQTColor = GColorPictonBlue;
-                    // settings.UVArcColor = GColorLightGray;
-                    // settings.UVMaxColor = GColorWhite;
-                    // settings.UVNowColor = GColorRed;
-                      theme_settings_changed = true;
-                      //  APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme blue selected");
-          } else if (strcmp(themeselect_t->value->cstring, "pl") == 0) {
-              // Set the theme and other settings for "bl"
-
-                    settings.BackgroundColor1 = GColorPurple;
-                    settings.SubDialColor = GColorPurple;
-                    if (shadowon_t) {
-                      settings.ShadowOn = shadowon_t->value->int32 == 1;
-                    }
-                        if(settings.ShadowOn){
-                          settings.MinuteHandShadowColor = GColorImperialPurple;
-                        }
-                        else {
-                        settings.MinuteHandShadowColor = GColorPurple;
-                        }
-                    settings.MinorTickColor = GColorImperialPurple;
-                    settings.DateColor = GColorRichBrilliantLavender;
-                    settings.HourDigitsColor = GColorRichBrilliantLavender;
-                    settings.MinutesHandColor = GColorRichBrilliantLavender;
-                    settings.SecondsHandColor = GColorBulgarianRose;
-                    settings.MonthHandColor = GColorBulgarianRose;
-                    settings.MajorTickColor = GColorRichBrilliantLavender;
-                    settings.BatteryLineColor = GColorBulgarianRose;
-                    settings.BTQTColor = GColorImperialPurple;
-                    // settings.UVArcColor = GColorLightGray;
-                    // settings.UVMaxColor = GColorWhite;
-                    // settings.UVNowColor = GColorRed;
-                      theme_settings_changed = true;
-                      //  APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme purple selected");
-          } else if (strcmp(themeselect_t->value->cstring, "gr") == 0) {
-              // Set the theme and other settings for "gr"
-
-                    settings.BackgroundColor1 = GColorBlack;
-                    settings.SubDialColor = GColorBlack;
-                    if (shadowon_t) {
-                      settings.ShadowOn = shadowon_t->value->int32 == 1;
-                    }
-                        if(settings.ShadowOn){
-                          settings.MinuteHandShadowColor = GColorDarkGreen;
-                        }
-                        else {
-                        settings.MinuteHandShadowColor = GColorBlack;
-                        }
-                    settings.MinorTickColor = GColorDarkGreen;
-                    settings.DateColor = GColorBrightGreen;
-                    settings.HourDigitsColor = GColorBrightGreen;
-                    settings.MinutesHandColor = GColorBrightGreen;
-                    settings.SecondsHandColor = GColorPastelYellow;
-                    settings.MonthHandColor = GColorPastelYellow;
-                    settings.MajorTickColor = GColorBrightGreen;
-                    settings.BatteryLineColor = GColorPastelYellow;
-                    settings.BTQTColor = GColorDarkGreen;
-                    // settings.UVArcColor = GColorDarkGray;
-                    // settings.UVMaxColor = GColorBlack;
-                    // settings.UVNowColor = GColorWhite;
-                      theme_settings_changed = true;
-                      //  APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme black & green selected");
-          } else if (strcmp(themeselect_t->value->cstring, "cu") == 0) {
+          const char *theme = themeselect_t->value->cstring;
+          if (apply_colour_theme(theme, shadowon_t)) {
+              theme_settings_changed = true;
+          } else if (strcmp(theme, "cu") == 0) {
               // Set the theme for "cu" and handle custom colors
                   if (bg_color1_t) {
                     settings.BackgroundColor1 = GColorFromHEX(bg_color1_t->value->int32);
@@ -1308,13 +1194,11 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                   if (hours_color_t) {
                     settings.HourDigitsColor = GColorFromHEX(hours_color_t->value->int32);
                     layer_mark_dirty(s_canvas_layer);
-                   // layer_mark_dirty(s_canvas_second_hand);
                   }
                  
                   if (minutes_color_t) {
                     settings.MinutesHandColor = GColorFromHEX(minutes_color_t->value->int32);
                     layer_mark_dirty(s_canvas_layer);
-                  //  layer_mark_dirty(s_canvas_second_hand);
                     layer_mark_dirty(s_date_battery_logo_layer);
                   }
 
@@ -1343,111 +1227,72 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     layer_mark_dirty(s_canvas_bt_icon);
                     layer_mark_dirty(s_canvas_qt_icon);
                   }
-                  // if (uvarccol_t){ settings.UVArcColor = GColorFromHEX(uvarccol_t-> value -> int32);}
-                  // if (uvmaxcol_t){settings.UVMaxColor = GColorFromHEX(uvmaxcol_t-> value -> int32);}
-                  // if (uvnowcol_t){settings.UVNowColor = GColorFromHEX(uvnowcol_t-> value -> int32);}
                   theme_settings_changed = true;
-                //    APP_LOG(APP_LOG_LEVEL_DEBUG, "Theme custom selected");
                 }
           }
 
                   ///////////////////////////////
 
-  if (settings_changed) {
-    layer_mark_dirty(s_bg_layer);
-    layer_mark_dirty(s_canvas_layer);
-    layer_mark_dirty(s_dial_layer);
-   // layer_mark_dirty(s_dial_digits_layer);
-    layer_mark_dirty(s_date_battery_logo_layer);
-    layer_mark_dirty(s_canvas_second_hand);
-    layer_mark_dirty(s_canvas_month_hand);
-    layer_mark_dirty(s_canvas_battery);
-     #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
-
-    layer_mark_dirty(s_canvas_weather);
-    #endif
-  }
-
-  if (theme_settings_changed) {
-    layer_mark_dirty(s_bg_layer);
-    layer_mark_dirty(s_canvas_layer);
-    layer_mark_dirty(s_dial_layer);
-  //  layer_mark_dirty(s_dial_digits_layer);
-    layer_mark_dirty(s_date_battery_logo_layer);
-    layer_mark_dirty(s_canvas_second_hand);
-    layer_mark_dirty(s_canvas_month_hand);
-    layer_mark_dirty(s_canvas_qt_icon);
-    layer_mark_dirty(s_canvas_bt_icon);
-    layer_mark_dirty(s_canvas_battery);
-    
-    #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
-    layer_mark_dirty(s_canvas_weather);
-    #endif
+  if (settings_changed || theme_settings_changed) {
+    mark_all_layers_dirty(theme_settings_changed);
   }
 
   prv_save_settings();
 
 }
 
+static void refresh_current_time(void) {
+  time_t now = time(NULL);
+  g_current_epoch = now;
+  prv_tick_time = localtime(&now);
+}
+
+// Recomputes everything that depends on the minute/date. Called on every minute
+// tick, and after settings arrive that change what the time means (e.g. a new
+// second-timezone offset).
+static void update_time_state(struct tm *tick_time) {
+  minutes = tick_time->tm_min;
+  hours = tick_time->tm_hour % 12;
+  s_hours = tick_time->tm_hour;
+  layer_mark_dirty(s_canvas_layer);
+  layer_mark_dirty(s_date_battery_logo_layer);
+  if ((settings.SubDialChoice == 3 || settings.SubDialChoice == 6) && tick_time->tm_mon != s_month) {
+    s_month = tick_time->tm_mon;
+  }
+  if (settings.EnableDate && tick_time->tm_mday != current_date) {
+    current_date = tick_time->tm_mday;
+    s_weekday = tick_time->tm_wday;
+    s_month = tick_time->tm_mon;
+  }
+}
+
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
-  
+
   #ifdef DEBUG
   APP_LOG(APP_LOG_LEVEL_DEBUG, "tick_handler fired: %02d:%02d", tick_time->tm_hour, tick_time->tm_min);
   #endif
 
-  time_t temp = time(NULL);
-  g_current_epoch = temp;
-  prv_tick_time = localtime(&temp);
+  refresh_current_time();
 
-  // Update hour and minute hands and the date on minute change
   if (units_changed & MINUTE_UNIT) {
-    ///update weather on just emery and gabbro
-    #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
-    if (s_countdown == 0){
-      //Reset weather update countdown
-      s_countdown = settings.UpSlider;
-    } else{
-      s_countdown = s_countdown - 1;
-    }
-
-    if (s_countdown == 0 ){
-      #ifdef DEBUG
-        APP_LOG(APP_LOG_LEVEL_DEBUG, "countdown is 0, updated weather at %d", tick_time -> tm_min);
-      #endif
-        // // Begin dictionary
-        // DictionaryIterator * iter;
-        // app_message_outbox_begin( & iter);
-        // // Add a key-value pair
-        // dict_write_uint8(iter, 0, 0);
-        // // Send the message!
-        // app_message_outbox_send();
-
-        prv_request_weather_update();
+    #ifdef HAS_WEATHER
+    // Ask the phone for fresh weather every UpSlider minutes
+    if (--s_countdown <= 0) {
+      s_countdown = settings.UpSlider > 0 ? settings.UpSlider : 1;
+      prv_request_weather_update();
     }
     #endif
 
-    minutes = tick_time->tm_min;
-    hours = tick_time->tm_hour % 12;
-    s_hours = tick_time->tm_hour;
-    layer_mark_dirty(s_canvas_layer);
-    layer_mark_dirty(s_date_battery_logo_layer);
-    if((settings.SubDialChoice == 3 || settings.SubDialChoice == 6) && tick_time->tm_mon != s_month){
-      s_month = tick_time->tm_mon;
-    }
-    if (settings.EnableDate && tick_time->tm_mday != current_date) {
-      current_date = tick_time->tm_mday;
-      s_weekday = tick_time->tm_wday;
-      s_month = tick_time->tm_mon;
-    }
+    update_time_state(tick_time);
   }
-// Update seconds hand on second change, but only if it's visible
+
+  // Update seconds hand on second change, but only if it's visible
   if (showSeconds && (units_changed & SECOND_UNIT)) {
     seconds = tick_time->tm_sec;
-    if (!settings.SmoothSweep){
+    if (!settings.SmoothSweep) {
       layer_mark_dirty(s_canvas_second_hand);
     }
   }
-
 }
 
 ///second hand and second hand background
@@ -1500,7 +1345,6 @@ static void draw_seconds_month_background(GContext *ctx) {
         draw_seconds_tick(ctx, angle, config.majorticklength, PBL_IF_BW_ELSE(settings.BWMajorTickColor, settings.MajorTickColor));
         
   }
-
 
 
 }
@@ -1855,7 +1699,6 @@ static void draw_minute_hand(GContext *ctx, int angle, int length, int back_leng
 }
 
 
-
 static void draw_hand_center(GContext *ctx, GColor outer_color, GColor inner_color) {
   GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
   
@@ -1866,7 +1709,6 @@ static void draw_hand_center(GContext *ctx, GColor outer_color, GColor inner_col
   graphics_fill_circle(ctx, origin, settings.InnerCentreSize); //started as 2
 
 }
-
 
 
 static void draw_major_tick (GContext *ctx, int angle, int length, GColor fill_color, GColor border_color) {
@@ -2010,7 +1852,6 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   }
 
 
-
   //draw battery value
   if(settings.EnableBattery ){
      //if(strcmp(settings.PosTop, "lo") == 0){
@@ -2098,7 +1939,6 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
       #endif
                    
   }
-
 
 
 }
@@ -2263,7 +2103,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
   
     //draw battery value
-  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  #ifdef HAS_WEATHER
   if(settings.EnableBattery && grect_equal(&full_bounds, &bounds) && !settings.UseWeather){
   
             fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
@@ -2643,7 +2483,7 @@ static void hour_min_hands_canvas_update_proc(Layer *layer, GContext *ctx) {
 }
 
 ////////weather updates - emery and gabbro only
-#if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+#ifdef HAS_WEATHER
 static void weather_update_proc(Layer *layer, GContext *ctx) {
     
     if (!settings.UseWeather) {
@@ -2658,42 +2498,22 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
     }
 
 
+    // Weather older than 1.5x the update interval is stale (time_t is seconds, so x 60 x 1.5 = x 90)
+    time_t staleAfterSeconds = (time_t)(settings.UpSlider * 90);
+    bool weatherStale = (s_last_weather_fetch == 0) ||
+        ((g_current_epoch - s_last_weather_fetch) > staleAfterSeconds);
+
     char CondToDraw[4];
-        //snprintf(CondToDraw, sizeof(CondToDraw), "%s", "\U0000f019");  //settings.iconnowstring);
-       
-        // If the weather was fetched more than 1.5x upslider minutes ago, it's stale.  time_t is in seconds, so x 60
+    snprintf(CondToDraw, sizeof(CondToDraw), "%s",
+             (s_launch_weather_delay || weatherStale) ? WEATHER_STALE_ICON : settings.iconnowstring);
 
-        time_t staleAfterSeconds = (time_t)(settings.UpSlider * 90); // 1.5 * 60
-        bool weatherStale = (s_last_weather_fetch == 0) ||
-            ((g_current_epoch - s_last_weather_fetch) > staleAfterSeconds);
-
-        if (s_launch_weather_delay) {
-          snprintf(CondToDraw, sizeof(CondToDraw), "%s", WEATHER_STALE_ICON);
-        } else if (weatherStale) {
-          snprintf(CondToDraw, sizeof(CondToDraw), "%s", WEATHER_STALE_ICON);
-        } else {
-          snprintf(CondToDraw, sizeof(CondToDraw), "%s", settings.iconnowstring);
-        }
-    
-    if(settings.EnableBatteryLine){
-    GRect IconNowRect = config.IconNowRect[0]; 
+    GRect IconNowRect = settings.EnableBatteryLine ? config.IconNowRect[0] : config.IconNowRect2[0];
     graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
     graphics_draw_text(ctx, CondToDraw, FontWeatherIcons, IconNowRect, GTextOverflowModeFill, GTextAlignmentRight, NULL);
 
-    }
-    else{
-    
-    GRect IconNowRect = config.IconNowRect2[0]; 
-    graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
-    graphics_draw_text(ctx, CondToDraw, FontWeatherIcons, IconNowRect, GTextOverflowModeFill, GTextAlignmentRight, NULL);
-
-    }
-
-  
     if (settings.RainSoon) {
 
       GRect RainIconRect = config.RainIconRect[0];
-      graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
       graphics_draw_text(ctx, "\U0000F084", FontWeatherIcons, RainIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
       
     }
@@ -2744,7 +2564,6 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
                   char TempToDraw[6];
                   //snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
                   snprintf(TempToDraw, sizeof(TempToDraw), "%s%s",settings.tempstring,"°");
-
 
 
                   fctx_set_offset(&fctx, temp_pos);
@@ -2826,15 +2645,11 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
 
 static void prv_window_load(Window *window) {
 
-  #if defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
-    light_enable_interaction();
-  #endif
-
   #ifdef BACKLIGHTON
     light_enable(true);  ///for ShareX screencapture gifs.  Must comment out declaration on line 11 before publishing, otherwise the backlight will stay on!
   #endif
 
-  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  #ifdef HAS_WEATHER
   s_countdown = settings.UpSlider;
   
   if (settings.UseWeather && settings.RefreshWeatherOnLaunch) {
@@ -2871,7 +2686,7 @@ static void prv_window_load(Window *window) {
     FontLogo = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DATE_14));
     FontHour = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DATE_30));
     #endif
-    #if defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+    #ifdef HAS_WEATHER
     FontWeatherIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WEATHERICONS_20));
     #endif
   // Subscribe to the connection service to get Bluetooth status updates.
@@ -2916,7 +2731,7 @@ static void prv_window_load(Window *window) {
     layer_set_hidden(s_canvas_bt_icon, is_connected);
     #endif
   s_canvas_battery = layer_create(bounds);
-  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  #ifdef HAS_WEATHER
   s_canvas_weather = layer_create(bounds);
   #endif
   s_canvas_layer = layer_create(bounds);
@@ -2931,7 +2746,7 @@ static void prv_window_load(Window *window) {
   layer_add_child(window_layer, s_canvas_bt_icon);
   layer_add_child(window_layer, s_canvas_qt_icon);
   layer_add_child(window_layer, s_date_battery_logo_layer); //fctx version of text
-  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  #ifdef HAS_WEATHER
   layer_add_child(window_layer, s_canvas_weather);
   #endif
   layer_add_child(window_layer, s_canvas_battery); //battery line
@@ -2944,7 +2759,7 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_canvas_qt_icon, layer_update_proc_qt);
   layer_set_update_proc(s_date_battery_logo_layer, update_logo_date_battery_fctx_layer);
   layer_set_update_proc(s_canvas_battery, layer_update_proc_battery_line);
-  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  #ifdef HAS_WEATHER
   layer_set_update_proc(s_canvas_weather, weather_update_proc);
   #endif
   layer_set_update_proc(s_canvas_layer, hour_min_hands_canvas_update_proc);
@@ -2973,7 +2788,7 @@ static void prv_window_unload(Window *window) {
   layer_destroy(s_canvas_tz);
   layer_destroy(s_canvas_comp_bg);
   layer_destroy(s_canvas_battery);
-  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  #ifdef HAS_WEATHER
   layer_destroy(s_canvas_weather);
   #endif
   layer_destroy(s_canvas_bt_icon);
@@ -2989,7 +2804,7 @@ static void prv_window_unload(Window *window) {
   fonts_unload_custom_font(FontHour);
   #endif
   fonts_unload_custom_font(FontBTQTIcons);
-  #if defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
+  #ifdef HAS_WEATHER
   fonts_unload_custom_font(FontWeatherIcons);
   #endif
   if (s_timeout_timer) {
@@ -3001,14 +2816,14 @@ static void prv_window_unload(Window *window) {
 static void prv_init(void) {
   prv_load_settings();
 
-////set larger for emery & gabbro to fix crash on send of extra weather data
-  #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
-  app_message_open(2048, 2048);
-  #elif defined(PBL_PLATFORM_FLINT) || defined (PBL_PLATFORM_DIORITE) || defined (PBL_PLATFORM_CHALK) || defined (PBL_PLATFORM_BASALT)
-  app_message_open(1024, 1024);
+  // The inbox is larger on emery/gabbro to fit the extra weather data (smaller buffers crashed).
+  // The watch only ever sends the 1-byte weather request (see prv_request_weather_update).
+  #ifdef HAS_WEATHER
+  const uint32_t inbox_size = 2048;
   #else
-  app_message_open(1024,1024);
+  const uint32_t inbox_size = 1024;
   #endif
+  app_message_open(inbox_size, dict_calc_buffer_size(1, sizeof(uint8_t)));
   app_message_register_inbox_received(prv_inbox_received_handler);
 
   s_window = window_create();

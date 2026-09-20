@@ -87,9 +87,7 @@
       "Roman",
       "TZ_ID",
       "TZ_ID_STATE",
-      "TZ_MODE",
       "TZ_OFFSET",
-      "TZ_CODE",
       "showremoteAMPM",
       "SubDialChoice",
       "SmoothSweep",
@@ -186,7 +184,7 @@
         },
         {
           "file": "fonts/WeatherIcons-RegularMod.ttf",
-          "characterRegex": "[]",
+          "characterRegex": "[]",
           "name": "FONT_WEATHERICONS_20",
           "targetPlatforms": [
             "emery",

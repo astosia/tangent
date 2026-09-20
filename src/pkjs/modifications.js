@@ -18,33 +18,58 @@ module.exports = function(minified) {
         return item.$manipulatorTarget[0] || item.$manipulatorTarget;
     };
 
-    // Creates the suggestion <ul> once, positioned directly under the input.
-    var getOrCreateSuggestionBox = function(inputElement) {
-        if (suggestionBox) return suggestionBox;
+    // ---- Suggestion dropdowns (shared by the timezone and location pickers) ----
 
+    var SUGGESTION_BOX_CSS = 'position:absolute;top:100%;left:0;right:0;z-index:1000;list-style:none;' +
+        'margin:0;padding:0;background:#fff;color:#222;border:1px solid #ccc;' +
+        'max-height:200px;overflow-y:auto;display:none';
+    var SUGGESTION_ROW_CSS = 'padding:6px 8px;cursor:pointer;color:#222;background:#fff';
+
+    // Creates a hidden suggestion <ul> positioned directly under the input.
+    var createSuggestionBox = function(inputElement, className) {
         var parent = inputElement.parentNode;
         parent.style.position = 'relative';
 
-        suggestionBox = document.createElement('ul');
-        suggestionBox.className = 'tz-suggestions';
-        suggestionBox.style.position = 'absolute';
-        suggestionBox.style.top = '100%';
-        suggestionBox.style.left = '0';
-        suggestionBox.style.right = '0';
-        suggestionBox.style.zIndex = '1000';
-        suggestionBox.style.listStyle = 'none';
-        suggestionBox.style.margin = '0';
-        suggestionBox.style.padding = '0';
-        suggestionBox.style.background = '#fff';
-        suggestionBox.style.color = '#222';
-        suggestionBox.style.border = '1px solid #ccc';
-        suggestionBox.style.maxHeight = '200px';
-        suggestionBox.style.overflowY = 'auto';
-        suggestionBox.style.display = 'none';
+        var box = document.createElement('ul');
+        box.className = className;
+        box.style.cssText = SUGGESTION_BOX_CSS;
+        parent.insertBefore(box, inputElement.nextSibling);
+        return box;
+    };
 
-        parent.insertBefore(suggestionBox, inputElement.nextSibling);
+    // Fills `box` with one row per item and shows it (or hides it if there are none).
+    // getLabel(item) gives the row text; onPick(item) runs when a row is chosen.
+    var renderSuggestions = function(box, items, getLabel, onPick) {
+        box.innerHTML = '';
 
-        return suggestionBox;
+        if (!items.length) {
+            box.style.display = 'none';
+            return;
+        }
+
+        items.forEach(function(item) {
+            var li = document.createElement('li');
+            li.textContent = getLabel(item);
+            li.style.cssText = SUGGESTION_ROW_CSS;
+
+            li.addEventListener('mouseenter', function() {
+                li.style.background = '#eee';
+            });
+            li.addEventListener('mouseleave', function() {
+                li.style.background = '#fff';
+            });
+
+            // mousedown (not click) fires before the input's blur handler,
+            // so the value is set before the blur-time validation runs.
+            li.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                onPick(item);
+            });
+
+            box.appendChild(li);
+        });
+
+        box.style.display = 'block';
     };
 
     var hideSuggestions = function() {
@@ -52,61 +77,30 @@ module.exports = function(minified) {
     };
 
     var showSuggestions = function(matches, inputElement, item, idstate) {
-        var box = getOrCreateSuggestionBox(inputElement);
-        box.innerHTML = '';
+        if (!suggestionBox) suggestionBox = createSuggestionBox(inputElement, 'tz-suggestions');
 
-        if (!matches.length) {
-            box.style.display = 'none';
-            return;
-        }
-
-        for (var i = 0; i < matches.length; i++) {
-            (function(tz) {
-                var li = document.createElement('li');
-                li.textContent = tz;
-                li.style.padding = '6px 8px';
-                li.style.cursor = 'pointer';
-                li.style.color = '#222';
-                li.style.background = '#fff';
-
-                li.addEventListener('mouseenter', function() {
-                    li.style.background = '#eee';
-                });
-                li.addEventListener('mouseleave', function() {
-                    li.style.background = '#fff';
-                });
-
-                // mousedown (not click) fires before the input's blur handler,
-                // so the value is set before the blur-time validation runs.
-                li.addEventListener('mousedown', function(e) {
-                    e.preventDefault();
-                    inputElement.value = tz;
-                    item.set(tz);
-                    idstate.set(tz);
-                    hideSuggestions();
-                });
-
-                box.appendChild(li);
-            })(matches[i]);
-        }
-
-        box.style.display = 'block';
+        renderSuggestions(suggestionBox, matches, function(zone) { return zone; }, function(zone) {
+            inputElement.value = zone;
+            item.set(zone);
+            idstate.set(zone);
+            hideSuggestions();
+        });
     };
 
-        var filterTimezones = function(query) {
-            if (!query) {
-                // return timezonesList.slice(0, MAX_SUGGESTIONS);
-                return timezonesList;
+    var filterTimezones = function(query) {
+        if (!query) {
+            // return timezonesList.slice(0, MAX_SUGGESTIONS);
+            return timezonesList;
+        }
+        var lower = query.toLowerCase();
+        var matches = [];
+        for (var i = 0; i < timezonesList.length && matches.length < MAX_SUGGESTIONS; i++) {
+            if (timezonesList[i].toLowerCase().indexOf(lower) !== -1) {
+                matches.push(timezonesList[i]);
             }
-            var lower = query.toLowerCase();
-            var matches = [];
-            for (var i = 0; i < timezonesList.length && matches.length < MAX_SUGGESTIONS; i++) {
-                if (timezonesList[i].toLowerCase().indexOf(lower) !== -1) {
-                    matches.push(timezonesList[i]);
-                }
-            }
-            return matches;
-        };
+        }
+        return matches;
+    };
 
     // On blur, anything that isn't an exact match to a fetched timezone gets cleared - this is what enforces "must pick from the list".
     var validateAndMaybeClear = function(inputElement, item, idstate) {
@@ -214,6 +208,18 @@ module.exports = function(minified) {
         }
     };
 
+    // Fallback only: if timeapi.io can't be reached, use the browser's own IANA zone list.
+    // Returns null when this browser can't provide one.
+    var getBuiltInTimezones = function() {
+        try {
+            var list = (typeof Intl !== 'undefined' && Intl.supportedValuesOf) ? Intl.supportedValuesOf('timeZone') : null;
+            if (!list || !list.length) return null;
+            return list.indexOf('UTC') === -1 ? list.concat('UTC') : list;
+        } catch (e) {
+            return null;
+        }
+    };
+
     var getTimezones = function() {
         updateDebug("Starting fetch...");
 
@@ -233,6 +239,16 @@ module.exports = function(minified) {
         var handleError = function(errorMsg) {
             cleanup();
             console.error("Timezone fetch error:", errorMsg);
+
+            var builtIn = getBuiltInTimezones();
+            if (builtIn) {
+                timezonesJSON = JSON.stringify(builtIn);
+                if (built) {
+                    loadTimezones(timezonesJSON);
+                }
+                return;
+            }
+
             tzDebug = "Error: " + errorMsg;
             timezonesJSON = null;
             if (built) {
@@ -314,81 +330,24 @@ module.exports = function(minified) {
     var selectedLocationDisplay = ""; // the last text that was actually picked from the list (or restored from a previous save)
     var locationEventsWired = false;
 
-    var getOrCreateLocationSuggestionBox = function(inputElement) {
-        if (locationSuggestionBox) return locationSuggestionBox;
-
-        var parent = inputElement.parentNode;
-        parent.style.position = 'relative';
-
-        locationSuggestionBox = document.createElement('ul');
-        locationSuggestionBox.className = 'location-suggestions';
-        locationSuggestionBox.style.position = 'absolute';
-        locationSuggestionBox.style.top = '100%';
-        locationSuggestionBox.style.left = '0';
-        locationSuggestionBox.style.right = '0';
-        locationSuggestionBox.style.zIndex = '1000';
-        locationSuggestionBox.style.listStyle = 'none';
-        locationSuggestionBox.style.margin = '0';
-        locationSuggestionBox.style.padding = '0';
-        locationSuggestionBox.style.background = '#fff';
-        locationSuggestionBox.style.color = '#222';
-        locationSuggestionBox.style.border = '1px solid #ccc';
-        locationSuggestionBox.style.maxHeight = '200px';
-        locationSuggestionBox.style.overflowY = 'auto';
-        locationSuggestionBox.style.display = 'none';
-
-        parent.insertBefore(locationSuggestionBox, inputElement.nextSibling);
-
-        return locationSuggestionBox;
-    };
-
     var hideLocationSuggestions = function() {
         if (locationSuggestionBox) locationSuggestionBox.style.display = 'none';
     };
 
     // matches: array of { display, lat, lon }
     var showLocationSuggestions = function(matches, inputElement, item, latItem, longItem) {
-        var box = getOrCreateLocationSuggestionBox(inputElement);
-        box.innerHTML = '';
-
-        if (!matches.length) {
-            box.style.display = 'none';
-            return;
+        if (!locationSuggestionBox) {
+            locationSuggestionBox = createSuggestionBox(inputElement, 'location-suggestions');
         }
 
-        for (var i = 0; i < matches.length; i++) {
-            (function(match) {
-                var li = document.createElement('li');
-                li.textContent = match.display;
-                li.style.padding = '6px 8px';
-                li.style.cursor = 'pointer';
-                li.style.color = '#222';
-                li.style.background = '#fff';
-
-                li.addEventListener('mouseenter', function() {
-                    li.style.background = '#eee';
-                });
-                li.addEventListener('mouseleave', function() {
-                    li.style.background = '#fff';
-                });
-
-                // mousedown (not click) fires before the input's blur handler,
-                // so the value is set before the blur-time validation runs.
-                li.addEventListener('mousedown', function(e) {
-                    e.preventDefault();
-                    inputElement.value = match.display;
-                    item.set(match.display);
-                    latItem.set(String(match.lat));
-                    longItem.set(String(match.lon));
-                    selectedLocationDisplay = match.display;
-                    hideLocationSuggestions();
-                });
-
-                box.appendChild(li);
-            })(matches[i]);
-        }
-
-        box.style.display = 'block';
+        renderSuggestions(locationSuggestionBox, matches, function(match) { return match.display; }, function(match) {
+            inputElement.value = match.display;
+            item.set(match.display);
+            latItem.set(String(match.lat));
+            longItem.set(String(match.lon));
+            selectedLocationDisplay = match.display;
+            hideLocationSuggestions();
+        });
     };
 
     var updateLocationDebug = function(message) {
@@ -611,145 +570,54 @@ module.exports = function(minified) {
         wireLocationInputEvents(item, latItem, longItem);
     };
 
+    var setVisible = function(item, visible) {
+        if (!item) return;
+        if (visible) { item.show(); } else { item.hide(); }
+    };
+
     // Shows the rest of the weather options only when the "Show Weather" toggle is on
+    var WEATHER_OPTION_KEYS = ["RefreshWeatherOnLaunch", "WeatherProv", "LocationQuery", "APIKEY_User", "UpSlider", "WeatherUnit"];
+
     var updateWeatherSectionVisibility = function() {
         var useWeather = config.getItemByMessageKey("UseWeather");
         if (!useWeather) return;
 
         var isWeatherOn = !!useWeather.get();
-
-        var keysToToggle = ["RefreshWeatherOnLaunch", "WeatherProv", "LocationQuery", "APIKEY_User", "UpSlider", "WeatherUnit"];
-
-        for (var i = 0; i < keysToToggle.length; i++) {
-            var item = config.getItemByMessageKey(keysToToggle[i]);
-            if (item) {
-                if (isWeatherOn) { item.show(); } else { item.hide(); }
-            }
-        }
+        WEATHER_OPTION_KEYS.forEach(function(key) {
+            setVisible(config.getItemByMessageKey(key), isWeatherOn);
+        });
     };
 
     var TZ_SUBDIAL_VALUE = 5; // matches "Second Timezone" option in SubDialChoice
-    var SECONDS_SUBDIAL_VALUES_A = [2]; // "Seconds, with Timeout" 
-    var SECONDS_SUBDIAL_VALUES_B = [2,6]; // "Month hand + seconds on shake" 
-    var SECONDS_SWEEP_VALUE = [1,2,6]; //Seconds always on, or with timeout, to show sweep option
 
-    // Shows the timezone-related fields only when SubDialChoice == 5.
-    var updateTimezoneSectionVisibility = function() {
+    // Which settings each SubDialChoice value reveals. An item is shown when the
+    // current choice is in the rule's `when` list, hidden otherwise. `ids` are
+    // item ids, `keys` are message keys.
+    var SUBDIAL_RULES = [
+        // Second timezone
+        { when: [TZ_SUBDIAL_VALUE], ids: ["TZ_HEADING", "TZ_BUTTON", "TZ_DEBUG"], keys: ["showremoteAMPM", "TZ_ID"] },
+        // Seconds, with timeout
+        { when: [2],       keys: ["AlwaysShowSubDial"] },
+        // Seconds with timeout, and month hand + seconds on shake
+        { when: [2, 6],    keys: ["SecondsVisibleTime"] },
+        // Seconds always on, or with timeout (or on shake): the sweep option is relevant
+        { when: [1, 2, 6], ids: ["SECONDS_HEADING"], keys: ["SmoothSweep"] }
+    ];
+
+    var updateSubdialSectionVisibility = function() {
         var subdial = config.getItemByMessageKey("SubDialChoice");
         if (!subdial) return;
 
-        var isTimezoneMode = parseInt(subdial.get(), 10) === TZ_SUBDIAL_VALUE;
-
-        var idsToToggle = ["TZ_HEADING", "TZ_BUTTON", "TZ_DEBUG"];
-        var keysToToggle = ["showremoteAMPM", "TZ_ID"];
-
-        var i, item;
-        for (i = 0; i < idsToToggle.length; i++) {
-            item = config.getItemById(idsToToggle[i]);
-            if (item) {
-                if (isTimezoneMode) { item.show(); } else { item.hide(); }
-            }
-        }
-        for (i = 0; i < keysToToggle.length; i++) {
-            item = config.getItemByMessageKey(keysToToggle[i]);
-            if (item) {
-                if (isTimezoneMode) { item.show(); } else { item.hide(); }
-            }
-        }
-    };
-
-    // Shows the seconds-hand-related fields only when SubDialChoice is one of the temporary seconds-hand modes (2 or 6)
-    var updateSecondsSectionVisibilityA = function() {
-        var subdial = config.getItemByMessageKey("SubDialChoice");
-        if (!subdial) return;
-
-        var currentValue = parseInt(subdial.get(), 10);
-        var isSecondsMode = false;
-        for (var i = 0; i < SECONDS_SUBDIAL_VALUES_A.length; i++) {
-            if (SECONDS_SUBDIAL_VALUES_A[i] === currentValue) {
-                isSecondsMode = true;
-                break;
-            }
-        }
-
-        var idsToToggle = ["SECONDS_HEADING"];
-        var keysToToggle = ["AlwaysShowSubDial"];
-
-        var j, item;
-        for (j = 0; j < idsToToggle.length; j++) {
-            item = config.getItemById(idsToToggle[j]);
-            if (item) {
-                if (isSecondsMode) { item.show(); } else { item.hide(); }
-            }
-        }
-        for (j = 0; j < keysToToggle.length; j++) {
-            item = config.getItemByMessageKey(keysToToggle[j]);
-            if (item) {
-                if (isSecondsMode) { item.show(); } else { item.hide(); }
-            }
-        }
-    };
-
-    var updateSecondsSectionVisibilityB = function() {
-        var subdial = config.getItemByMessageKey("SubDialChoice");
-        if (!subdial) return;
-
-        var currentValue = parseInt(subdial.get(), 10);
-        var isSecondsMode = false;
-        for (var i = 0; i < SECONDS_SUBDIAL_VALUES_B.length; i++) {
-            if (SECONDS_SUBDIAL_VALUES_B[i] === currentValue) {
-                isSecondsMode = true;
-                break;
-            }
-        }
-
-        var idsToToggle = ["SECONDS_HEADING"];
-        var keysToToggle = ["SecondsVisibleTime","BacklightInteraction"];
-
-        var j, item;
-        for (j = 0; j < idsToToggle.length; j++) {
-            item = config.getItemById(idsToToggle[j]);
-            if (item) {
-                if (isSecondsMode) { item.show(); } else { item.hide(); }
-            }
-        }
-        for (j = 0; j < keysToToggle.length; j++) {
-            item = config.getItemByMessageKey(keysToToggle[j]);
-            if (item) {
-                if (isSecondsMode) { item.show(); } else { item.hide(); }
-            }
-        }
-    };
-
-    var updateSweepVisibility = function() {
-        var subdial = config.getItemByMessageKey("SubDialChoice");
-        if (!subdial) return;
-
-        var currentValue = parseInt(subdial.get(), 10);
-        var isSecondsMode = false;
-        for (var i = 0; i < SECONDS_SWEEP_VALUE.length; i++) {
-            if (SECONDS_SWEEP_VALUE[i] === currentValue) {
-                isSecondsMode = true;
-                break;
-            }
-        }
-
-        var idsToToggle = ["SECONDS_HEADING"];
-        var keysToToggle = ["SmoothSweep"];
-
-        var j, item;
-        for (j = 0; j < idsToToggle.length; j++) {
-            item = config.getItemById(idsToToggle[j]);
-            if (item) {
-                if (isSecondsMode) { item.show(); } else { item.hide(); }
-            }
-        }
-        for (j = 0; j < keysToToggle.length; j++) {
-            item = config.getItemByMessageKey(keysToToggle[j]);
-            if (item) {
-                if (isSecondsMode) { item.show(); } else { item.hide(); }
-            }
-        }
+        var choice = parseInt(subdial.get(), 10);
+        SUBDIAL_RULES.forEach(function(rule) {
+            var visible = rule.when.indexOf(choice) !== -1;
+            (rule.ids || []).forEach(function(id) {
+                setVisible(config.getItemById(id), visible);
+            });
+            (rule.keys || []).forEach(function(key) {
+                setVisible(config.getItemByMessageKey(key), visible);
+            });
+        });
     };
 
     var maybeAutoFetchTimezones = function() {
@@ -787,16 +655,10 @@ module.exports = function(minified) {
 
         var subdial = config.getItemByMessageKey("SubDialChoice");
         if (subdial) {
-            subdial.on('change', updateTimezoneSectionVisibility);
-            subdial.on('change', updateSecondsSectionVisibilityA);
-            subdial.on('change', updateSecondsSectionVisibilityB);
-            subdial.on('change', updateSweepVisibility);
+            subdial.on('change', updateSubdialSectionVisibility);
             subdial.on('change', maybeAutoFetchTimezones);
         }
-        updateTimezoneSectionVisibility();
-        updateSecondsSectionVisibilityA();
-        updateSecondsSectionVisibilityB();
-        updateSweepVisibility();
+        updateSubdialSectionVisibility();
         maybeAutoFetchTimezones();
 
         var useWeather = config.getItemByMessageKey("UseWeather");
@@ -805,6 +667,4 @@ module.exports = function(minified) {
         }
         updateWeatherSectionVisibility();
     });
-
-    
 };

@@ -6,36 +6,85 @@ var clayConfig = require('./config.js');
 var tz = require('./timezones.js');
 var weather = require('./weather.js');
 var modifications = require('./modifications.js');
+var messageKeys = require('message_keys');
 
 var clay = new Clay(clayConfig, modifications, { autoHandleEvents: false });
 
-var messageKeys = require('message_keys');
-
 var messageKeysLookup = {};
-var keys = Object.keys(messageKeys);
-for (var i = 0; i < keys.length; i++) {
-    messageKeysLookup[messageKeys[keys[i]]] = keys[i];
-}
+Object.keys(messageKeys).forEach(function(name) {
+    messageKeysLookup[messageKeys[name]] = name;
+});
 
 var Pebble_platform = (Pebble.getActiveWatchInfo && Pebble.getActiveWatchInfo().platform) || 'aplite';
 var isbw = (Pebble_platform === 'aplite' || Pebble_platform === 'diorite' || Pebble_platform === 'flint');
+
+// Keys the watch never reads. Clay needs them (config.js items / weather.js inputs),
+// but sending them would only use up AppMessage space.
+var PHONE_ONLY_KEYS = [
+    'APIKEY_User', 
+    'WeatherProv', 
+    'Lat', 
+    'Long', 
+    'LocationQuery', 
+    'WeatherUnit',
+    'TZ_ID', 
+    'TZ_ID_STATE'
+];
+
+// Keys that only matter on colour watches. To minimise the number of keys sent to
+// APLITE (and the other B&W watches) these are dropped for isbw platforms.
+var COLOUR_ONLY_KEYS = [
+    'IconNow', 
+    'WeatherTemp', 
+    'TempFore', 
+    'RainSoon', 
+    'WBGTLevel',
+    'ThemeSelect', 
+    'BackgroundColor1', 
+    'MinuteHandShadowColor', 
+    'MajorTickColor',
+    'MinorTickColor', 
+    'HourDigitsColor', 
+    'MinutesHandColor', 
+    'SecondsHandColor',
+    'MonthHandColor', 
+    'SubDialColor', 
+    'DateColor', 
+    'BatteryLineColor', 
+    'BTQTColor'
+];
+
+// Removes the named keys from a numeric-keyed settings/message object.
+var stripKeys = function(obj, names) {
+    names.forEach(function(name) {
+        delete obj[messageKeys[name]];
+    });
+    return obj;
+};
 
 // clay.getSettings(e.response) returns an object keyed by numeric
 // message-key ID (e.g. settings[10062]). Several helpers (weather.js, and
 // the webviewclosed logic below) are easier to read/reuse if they can
 // instead work with friendly string names (settings.UseWeather) - the same
 // shape the settings take once persisted to localStorage. This converts
-// one to the other; keys with no registered message key (like
-// APIKEY_User) pass through unchanged.
+// one to the other; keys with no registered message key pass through unchanged.
 var toFriendlySettings = function(numericSettings) {
     var friendly = {};
-    var numKeys = Object.keys(numericSettings);
-    for (var j = 0; j < numKeys.length; j++) {
-        var k = numKeys[j];
-        var name = messageKeysLookup[k] || k;
-        friendly[name] = numericSettings[k];
-    }
+    Object.keys(numericSettings).forEach(function(k) {
+        friendly[messageKeysLookup[k] || k] = numericSettings[k];
+    });
     return friendly;
+};
+
+// Settings as Clay persisted them (friendly string keys), or null if unreadable.
+var readStoredSettings = function() {
+    try {
+        var json = localStorage.getItem('clay-settings');
+        return json ? JSON.parse(json) : {};
+    } catch (err) {
+        console.error("Error parsing settings from localStorage: " + err);
+        return null;
+    }
 };
 
 Pebble.addEventListener('showConfiguration', function(e) {
@@ -50,12 +99,9 @@ var sendAppMessage = function(msg) {
     try {
         Pebble.sendAppMessage(msg, function(e) {
             var readable = {};
-            var msgKeys = Object.keys(msg);
-            for (var j = 0; j < msgKeys.length; j++) {
-                var k = msgKeys[j];
-                var label = (messageKeysLookup[k] || k) + " (" + k + ")";
-                readable[label] = msg[k];
-            }
+            Object.keys(msg).forEach(function(k) {
+                readable[(messageKeysLookup[k] || k) + " (" + k + ")"] = msg[k];
+            });
             console.debug("Successfully sent message to watch: " + JSON.stringify(readable, null, 2));
         }, function(err) {
             console.error("AppMessage send failed: " + JSON.stringify(err));
@@ -66,205 +112,104 @@ var sendAppMessage = function(msg) {
 };
 
 // Resolves the timezone portion of `settings` (mutates and returns a promise
-// of the same settings object). Never rejects - on failure it fills in
-// error-marker values so the AppMessage still gets built and sent.
+// of the same settings object): sets TZ_OFFSET from the chosen zone. Never
+// rejects - if the offset can't be worked out TZ_OFFSET is set to -1, which the
+// watch treats as "unknown", so the AppMessage still gets built and sent.
 var applyTimezone = function(settings) {
-    var tzmodekey = messageKeys.TZ_MODE;
-    var tzidkey = messageKeys.TZ_ID;
-    var tzidstatekey = messageKeys.TZ_ID_STATE;
     var tzoffsetkey = messageKeys.TZ_OFFSET;
-    var tzcodekey = messageKeys.TZ_CODE;
+    var zone = settings[messageKeys.TZ_ID_STATE] || settings[messageKeys.TZ_ID];
 
-    settings[tzmodekey] = settings[tzmodekey] ? 1 : 0;
-
-    var cachedtz = settings[tzidstatekey] || settings[tzidkey];
-
-    // Ensure timezone keys exist even if not set
-    if (typeof settings[tzidkey] === 'undefined') {
-        settings[tzidkey] = "";
-    }
-    if (typeof settings[tzoffsetkey] === 'undefined') {
+    if (!zone || zone === "undefined") {
+        // Timezone disabled or not selected
         settings[tzoffsetkey] = 0;
-    }
-    if (typeof settings[tzcodekey] === 'undefined') {
-        settings[tzcodekey] = "";
+        return Promise.resolve(settings);
     }
 
-    if (cachedtz && cachedtz !== "" && cachedtz !== "undefined") {
-        settings[tzidkey] = cachedtz;
-        return tz.get(cachedtz).then(function(partial) {
-            settings[tzoffsetkey] = partial[tzoffsetkey];
-            settings[tzcodekey] = partial[tzcodekey];
-            delete settings[tzidstatekey];
-            return settings;
-        }).catch(function(err) {
-            console.error("Unable to get offset for " + cachedtz + ": " + err.message);
-            delete settings[tzidstatekey];
-            settings[tzoffsetkey] = -1;
-            settings[tzcodekey] = "ERR";
-            return settings;
-        });
-    }
+    return tz.get(zone).then(function(partial) {
+        settings[tzoffsetkey] = partial[tzoffsetkey];
+        return settings;
+    }).catch(function(err) {
+        console.error("Unable to get offset for " + zone + ": " + err.message);
+        settings[tzoffsetkey] = -1;
+        return settings;
+    });
+};
 
-    // Timezone disabled or not selected
-    settings[tzidkey] = "";
-    settings[tzoffsetkey] = 0;
-    settings[tzcodekey] = "";
-    delete settings[tzidstatekey];
-    return Promise.resolve(settings);
+var NO_WEATHER = { icon: 0, temp: "--", tempFore: "--|--", rainSoon: 0, wbgtLevel: 0 };
+
+// Copies a weather.get() result onto `msg` under the message keys the watch expects.
+var weatherToMessage = function(result, msg) {
+    msg[messageKeys.IconNow] = result.icon;
+    msg[messageKeys.WeatherTemp] = result.temp;
+    msg[messageKeys.TempFore] = result.tempFore;
+    msg[messageKeys.RainSoon] = result.rainSoon;
+    msg[messageKeys.WBGTLevel] = result.wbgtLevel;
+    return msg;
 };
 
 // Resolves the weather portion of `settings` (mutates and returns a promise
 // of the same numeric-keyed settings object). Never rejects - on failure it
 // leaves placeholder values so the AppMessage still gets built and sent.
 var applyWeather = function(settings) {
-    var iconKey = messageKeys.IconNow;
-    var tempKey = messageKeys.WeatherTemp;
-    var foreKey = messageKeys.TempFore;
-    var rainKey = messageKeys.RainSoon;
-    var wbgtKey = messageKeys.WBGTLevel;
-    var friendly = toFriendlySettings(settings);
-
-    return weather.get(friendly).then(function(result) {
-        settings[iconKey] = result.icon;
-        settings[tempKey] = result.temp;
-        settings[foreKey] = result.tempFore;
-        settings[rainKey] = result.rainSoon;
-        settings[wbgtKey] = result.wbgtLevel;
-        return settings;
+    return weather.get(toFriendlySettings(settings)).then(function(result) {
+        return weatherToMessage(result, settings);
     }).catch(function(err) {
         console.error("Unable to fetch weather: " + err.message);
-        settings[iconKey] = 0;
-        settings[tempKey] = "--";
-        settings[foreKey] = "--|--";
-        settings[rainKey] = 0;
-        settings[wbgtKey] = 0;
-        return settings;
+        return weatherToMessage(NO_WEATHER, settings);
     });
 };
 
-// Fetches weather using whatever settings are currently in localStorage
-// (friendly string-keyed, same shape clay persists there) and pushes
-// IconNow/WeatherTemp/TempFore/RainSoon to the watch. Used both on app
-// launch and whenever the watch asks for a refresh
-var refreshWeatherFromStorage = function() {
-    var settings;
-    try {
-        var json = localStorage.getItem('clay-settings');
-        settings = json ? JSON.parse(json) : {};
-    } catch (err) {
-        console.error("Error parsing settings from localStorage: " + err);
-        return;
-    }
-
+// Fetches weather using `settings` (friendly string-keyed, same shape clay
+// persists in localStorage) and pushes it to the watch. Used on app launch
+// (if enabled) and whenever the watch asks for a refresh.
+var refreshWeather = function(settings) {
     if (!settings || !settings.UseWeather) {
         return;
     }
 
     weather.get(settings).then(function(result) {
-        var msg = {};
-        msg[messageKeys.IconNow] = result.icon;
-        msg[messageKeys.WeatherTemp] = result.temp;
-        msg[messageKeys.TempFore] = result.tempFore;
-        msg[messageKeys.RainSoon] = result.rainSoon;
-        msg[messageKeys.WBGTLevel] = result.wbgtLevel;
-        sendAppMessage(msg);
+        sendAppMessage(weatherToMessage(result, {}));
     }).catch(function(err) {
         console.error("Unable to refresh weather: " + err.message);
     });
 };
 
 Pebble.addEventListener('webviewclosed', function(e) {
-    if (e && !e.response) return;
+    if (!e || !e.response) return;
 
-    if (isbw) {
-    var settings = clay.getSettings(e.response);
-
-    applyTimezone(settings)
-        ///// to minimise number of keys used by APLITE, delete unused keys from messages.  Might as well do this for other BW watches too
-        .then(function(finalSettings) {
-            delete finalSettings[messageKeys.APIKEY_User];
-            delete finalSettings[messageKeys.IconNow];
-            delete finalSettings[messageKeys.WeatherTemp];
-            delete finalSettings[messageKeys.TempFore];
-            delete finalSettings[messageKeys.RainSoon];
-            delete finalSettings[messageKeys.WBGTLevel];
-            delete finalSettings[messageKeys.ThemeSelect];
-            delete finalSettings[messageKeys.BackgroundColor1];
-            delete finalSettings[messageKeys.MinuteHandShadowColor];
-            delete finalSettings[messageKeys.MajorTickColor];
-            delete finalSettings[messageKeys.MinorTickColor];
-            delete finalSettings[messageKeys.HourDigitsColor];
-            delete finalSettings[messageKeys.MinutesHandColor];
-            delete finalSettings[messageKeys.SecondsHandColor];
-            delete finalSettings[messageKeys.MonthHandColor];
-            delete finalSettings[messageKeys.SubDialColor];
-            delete finalSettings[messageKeys.DateColor];
-            delete finalSettings[messageKeys.BatteryLineColor];
-            delete finalSettings[messageKeys.BTQTColor];
-
-            delete finalSettings[messageKeys.WeatherProv];
-            delete finalSettings[messageKeys.Lat];
-            delete finalSettings[messageKeys.Long];
-            delete finalSettings[messageKeys.LocationQuery];
-            delete finalSettings[messageKeys.TZ_CODE];
-            delete finalSettings[messageKeys.TZ_MODE];
-            delete finalSettings[messageKeys.TZ_ID];
-
-
-            sendAppMessage(finalSettings);
-        });
-        
+    var pending = applyTimezone(clay.getSettings(e.response));
+    if (!isbw) {
+        pending = pending.then(applyWeather);
     }
-        
-    else {
-        var settings = clay.getSettings(e.response);
 
-       applyTimezone(settings)
-        .then(applyWeather)
-        
-        .then(function(finalSettings) {
-            delete finalSettings[messageKeys.APIKEY_User];
-
-            delete finalSettings[messageKeys.WeatherProv];
-            delete finalSettings[messageKeys.Lat];
-            delete finalSettings[messageKeys.Long];
-            delete finalSettings[messageKeys.LocationQuery];
-            delete finalSettings[messageKeys.TZ_CODE];
-            delete finalSettings[messageKeys.TZ_MODE];
-            delete finalSettings[messageKeys.TZ_ID];
-
-            sendAppMessage(finalSettings);
-        });
-    } 
+    pending.then(function(finalSettings) {
+        stripKeys(finalSettings, PHONE_ONLY_KEYS);
+        if (isbw) {
+            stripKeys(finalSettings, COLOUR_ONLY_KEYS);
+        }
+        sendAppMessage(finalSettings);
+    });
 });
 
 Pebble.addEventListener('ready', function(e) {
-    var settings;
-    try {
-        // Access to localStorage with a fallback to prevent crashes on first run
-        var json = localStorage.getItem('clay-settings');
-        settings = json ? JSON.parse(json) : {};
-    } catch (err) {
-        console.error("Error parsing settings from localStorage: " + err);
-        return;
+    var settings = readStoredSettings();
+    if (!settings) return;
+
+    // Only refresh weather on launch if the user asked for that ("Refresh weather on launch").
+    if (settings.RefreshWeatherOnLaunch) {
+        refreshWeather(settings);
     }
 
-    // Refresh weather on launch if it's enabled, so the watch has fresh data before the next config save.
-    refreshWeatherFromStorage();
-
     // If a timezone was previously saved, update the watch with fresh offset data
-    if (settings && settings.TZ_ID && settings.TZ_ID !== "" && settings.TZ_ID !== "undefined") {
-        tz.get(settings.TZ_ID).then(function(msg) {
-            sendAppMessage(msg);
-        }).catch(function(err) {
+    if (settings.TZ_ID && settings.TZ_ID !== "undefined") {
+        tz.get(settings.TZ_ID).then(sendAppMessage).catch(function(err) {
             console.error("Unable to get offset for " + settings.TZ_ID + " on startup: " + err.message);
         });
     }
 });
 
-// The watch periodically sends a dummy AppMessage (a single uint8 at key 0) to ask the phone for a fresh weather reading - see tick_handler()'s s_countdown logic in nomos.c. 
+// The watch periodically sends a dummy AppMessage (a single uint8 at key 0) to ask the phone for a fresh weather reading - see tick_handler()'s s_countdown logic in nomos.c.
 Pebble.addEventListener('appmessage', function(e) {
     console.debug("Received app message: " + JSON.stringify(e.payload, null, 2));
-    refreshWeatherFromStorage();
+    refreshWeather(readStoredSettings());
 });

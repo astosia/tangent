@@ -1,135 +1,79 @@
-var TZ_KEY = 'TZ_KEY';
+var keys = require('message_keys');
 
-var timezones = localStorage.getItem(TZ_KEY);
-if (timezones !== null) {
-    timezones = JSON.parse(timezones);
-}
+// UTC offsets run from -12:00 to +14:00; anything outside that means a bad calculation.
+var MIN_OFFSET_SECONDS = -12 * 3600;
+var MAX_OFFSET_SECONDS = 14 * 3600;
 
-var indexOf = function(timezone) {
-    return new Promise(function(resolve, reject) {
-        var xhr = new XMLHttpRequest();
-        xhr.onload = function () {
-            var newTimezones = JSON.parse(this.responseText);
-            localStorage.setItem(TZ_KEY, this.responseText);
-            timezones = newTimezones;
-            resolve(timezones.indexOf(timezone));
-        };
-        xhr.onerror = reject;
-        // Updated to timeapi.io AvailableTimeZones endpoint
-        xhr.open('GET', 'https://timeapi.io/api/TimeZone/AvailableTimeZones');
-        xhr.send();
+// Current offset of `timezone` from UTC, in seconds, calculated on the phone.
+// Formats "now" as wall-clock parts in the target zone, reads those parts back as
+// if they were UTC, and takes the difference. Throws for an unknown zone.
+var offsetSecondsFromIntl = function(timezone, date) {
+    var v = {};
+    new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        hourCycle: 'h23',
+        year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: 'numeric', minute: 'numeric', second: 'numeric'
+    }).formatToParts(date).forEach(function(part) {
+        v[part.type] = parseInt(part.value, 10);
     });
+
+    // % 24 because some engines still report midnight as hour 24
+    var wallClockAsUtc = Date.UTC(v.year, v.month - 1, v.day, v.hour % 24, v.minute, v.second);
+    var offset = Math.round((wallClockAsUtc - Math.floor(date.getTime() / 1000) * 1000) / 1000);
+
+    if (isNaN(offset) || offset < MIN_OFFSET_SECONDS || offset > MAX_OFFSET_SECONDS) {
+        throw new Error("Calculated offset out of valid range: " + offset);
+    }
+    return offset;
 };
 
-// Fetch timezone details from TimeAPI.io
-var fetchFromTimeAPI = function(timezone) {
+// Fallback for phones whose JS engine can't do the calculation above.
+var offsetSecondsFromTimeAPI = function(timezone) {
     return new Promise(function(resolve, reject) {
-        // Updated to timeapi.io zone query endpoint
-        var url = 'https://timeapi.io/api/TimeZone/zone?timeZone=' + timezone;
         var xhr = new XMLHttpRequest();
         var timeoutId = setTimeout(function() {
             xhr.abort();
             reject(new Error("Timezone offset request timed out"));
         }, 8000);
-        
+
         xhr.onload = function() {
             clearTimeout(timeoutId);
-            if (xhr.status === 200) {
-                try {
-                    var response = JSON.parse(xhr.responseText);
-                    var keys = require('message_keys');
-                    
-                    // Determine the abbreviation (DST vs Standard)
-                    var code = response.isDaylightSavingActive ? 
-                        (response.dstInterval ? response.dstInterval.dstName : "DST") : 
-                        (response.standardInterval ? response.standardInterval.name : "STD");
-                    
-                    var result = {};
-                    // timeapi.io provides total seconds in currentUtcOffset
-                    result[keys.TZ_OFFSET] = response.currentUtcOffset.seconds;
-                    result[keys.TZ_CODE] = code;
-                    resolve(result);
-                } catch (e) {
-                    reject(new Error("Failed to parse timezone response"));
-                }
-            } else {
+            if (xhr.status !== 200) {
                 reject(new Error('Timezone GET failed with error ' + xhr.status + ' ' + xhr.statusText));
+                return;
+            }
+            try {
+                resolve(JSON.parse(xhr.responseText).currentUtcOffset.seconds);
+            } catch (e) {
+                reject(new Error("Failed to parse timezone response"));
             }
         };
-        
+
         xhr.onerror = function() {
             clearTimeout(timeoutId);
             reject(new Error("Failed to make timezone GET request"));
         };
-        
-        xhr.open('GET', url);
+
+        xhr.open('GET', 'https://timeapi.io/api/TimeZone/zone?timeZone=' + encodeURIComponent(timezone));
         xhr.send();
     });
 };
 
-// Calculates offset locally first, fall back to API
+// Resolves to an AppMessage payload { TZ_OFFSET: <seconds> }; tries the local calculation first.
 var getTimezoneOffset = function(timezone) {
-    return new Promise(function(resolve, reject) {
-        try {
-            // Method 1: Calculate offset using browser's Date API
-            var now = new Date();
-            var tzString = now.toLocaleString('en-US', { timeZone: timezone });
-            var tzDate = new Date(tzString);
-            var utcDate = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
-            
-            var offsetMs = tzDate.getTime() - utcDate.getTime();
-            var offsetSeconds = Math.round(offsetMs / 1000);
-            
-            var formatter = new Intl.DateTimeFormat('en-US', {
-                timeZone: timezone,
-                timeZoneName: 'short'
-            });
-            
-            var parts = formatter.formatToParts(now);
-            var tzNamePart = null;
-            for (var i = 0; i < parts.length; i++) {
-                if (parts[i].type === 'timeZoneName') {
-                    tzNamePart = parts[i];
-                    break;
-                }
-            }
-            
-            var code = tzNamePart ? tzNamePart.value : timezone.split('/').pop();
-            
-            if (offsetSeconds < -43200 || offsetSeconds > 50400) {
-                throw new Error("Calculated offset out of valid range");
-            }
-            
-            var keys = require('message_keys');
-            var result = {};
-            result[keys.TZ_OFFSET] = offsetSeconds;
-            result[keys.TZ_CODE] = code;
-            
-            console.log("[TZ] Local calculation succeeded for " + timezone + ": " + offsetSeconds + "s (" + code + ")");
-            resolve(result);
-            
-        } catch (e) {
-            // Fallback to TimeAPI.io
-            console.log("[TZ] Local calculation failed for " + timezone + ", trying API: " + e.message);
-            fetchFromTimeAPI(timezone)
-                .then(function(result) {
-                    console.log("[TZ] API fallback succeeded for " + timezone);
-                    resolve(result);
-                })
-                .catch(function(err) {
-                    console.error("[TZ] Both local and API methods failed for " + timezone);
-                    reject(err);
-                });
-        }
+    return new Promise(function(resolve) {
+        resolve(offsetSecondsFromIntl(timezone, new Date()));
+    }).catch(function(e) {
+        console.log("[TZ] Local calculation failed for " + timezone + ", trying API: " + e.message);
+        return offsetSecondsFromTimeAPI(timezone);
+    }).then(function(seconds) {
+        var msg = {};
+        msg[keys.TZ_OFFSET] = seconds;
+        return msg;
     });
 };
 
-var getTimezoneOffsetFromIndex = function(index) {
-    return getTimezoneOffset(timezones[index]);
-};
-
 module.exports = {
-    indexOf: indexOf,
-    get: getTimezoneOffset,
-    getFromIndex: getTimezoneOffsetFromIndex
+    get: getTimezoneOffset
 };

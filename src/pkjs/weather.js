@@ -8,43 +8,41 @@ function clampIcon(idx) {
     return n;
 }
 
-// Open-Meteo "weathercode,is_day" -> icon index
-// Columns are day (is_day=1) and night (is_day = 0)
+// Open-Meteo weather_code -> [day icon, night icon]
 var ds_iconToId = {
-    '0,1': 101, '0,0': 102,   // clear sky
-    '1,1': 103, '1,0': 104,   // mainly clear
-    '2,1': 105, '2,0': 106,   // partly cloudy
-    '3,1': 110, '3,0': 110,   // overcast
-    '45,1': 90, '45,0': 90,   // fog
-    '48,1': 90, '48,0': 90,   // freezing fog
-    '51,1': 37, '51,0': 38,   // light drizzle
-    '53,1': 24, '53,0': 24,   // moderate drizzle
-    '55,1': 34, '55,0': 34,   // dense drizzle
-    '56,1': 24, '56,0': 24,   // light freezing drizzle
-    '57,1': 34, '57,0': 34,   // dense freezing drizzle
-    '61,1': 34, '61,0': 40,   // slight rain
-    '63,1': 46, '63,0': 46,   // moderate rain
-    '65,1': 46, '65,0': 46,   // heavy rain
-    '66,1': 67, '66,0': 68,   // light freezing rain (sleet)
-    '67,1': 66, '67,0': 66,   // heavy freezing rain (sleet)
-    '71,1': 77, '71,0': 78,   // slight snow
-    '73,1': 114,'73,0': 114,  // moderate snow
-    '75,1': 63, '75,0': 63,   // heavy snow
-    '77,1': 117,'77,0': 117,  // snow grains
-    '80,1': 34, '80,0': 40,   // slight rain showers
-    '81,1': 46, '81,0': 46,   // moderate rain showers
-    '82,1': 58, '82,0': 58,   // violent rain showers
-    '85,1': 77, '85,0': 78,   // slight snow showers
-    '86,1': 79, '86,0': 79,   // heavy snow showers
-    '95,1': 17, '95,0': 2,    // thunderstorm
-    '96,1': 20, '96,0': 20,   // thunderstorm, slight hail
-    '99,1': 20, '99,0': 20    // thunderstorm, heavy hail
+    0: [101, 102],  // clear sky
+    1: [103, 104],  // mainly clear
+    2: [105, 106],  // partly cloudy
+    3: [110, 110],  // overcast
+    45: [90, 90],  // fog
+    48: [90, 90],  // freezing fog
+    51: [37, 38],  // light drizzle
+    53: [24, 24],  // moderate drizzle
+    55: [34, 34],  // dense drizzle
+    56: [24, 24],  // light freezing drizzle
+    57: [34, 34],  // dense freezing drizzle
+    61: [34, 40],  // slight rain
+    63: [46, 46],  // moderate rain
+    65: [46, 46],  // heavy rain
+    66: [67, 68],  // light freezing rain (sleet)
+    67: [66, 66],  // heavy freezing rain (sleet)
+    71: [77, 78],  // slight snow
+    73: [114, 114],  // moderate snow
+    75: [63, 63],  // heavy snow
+    77: [117, 117],  // snow grains
+    80: [34, 40],  // slight rain showers
+    81: [46, 46],  // moderate rain showers
+    82: [58, 58],  // violent rain showers
+    85: [77, 78],  // slight snow showers
+    86: [79, 79],  // heavy snow showers
+    95: [17, 2],  // thunderstorm
+    96: [20, 20],  // thunderstorm, slight hail
+    99: [20, 20]  // thunderstorm, heavy hail
 };
 
 function iconFromOpenMeteo(weatherCode, isDay) {
-    var key = String(weatherCode) + ',' + (isDay ? '1' : '0');
-    var result = ds_iconToId[key];
-    return clampIcon(result !== undefined ? result : 0);
+    var pair = ds_iconToId[weatherCode];
+    return clampIcon(pair ? pair[isDay ? 0 : 1] : 0);
 }
 
 // OpenWeatherMap "id" + "icon suffix" (e.g. "800" + "d") -> icon index.
@@ -306,6 +304,11 @@ function calcWBGTLiljegren(tempC, relHumidityPercent, windMps, solarWpm2, fdb, f
     return 0.7 * tnwb + 0.2 * tg + 0.1 * tempC;
 }
 
+// Celsius -> the unit the user asked for, rounded for display
+function toDisplayTemp(tempC, useFahrenheit) {
+    return Math.round(useFahrenheit ? (tempC * 9 / 5) + 32 : tempC);
+}
+
 // ---- Networking helper -------------------------------------------------
 
 function xhrGetJSON(url, timeoutMs) {
@@ -376,14 +379,14 @@ function fetchOpenMeteo(lat, lon, useFahrenheit) {
         '&current=temperature_2m,relative_humidity_2m,weather_code,is_day,' +
             'wind_speed_10m,shortwave_radiation,direct_radiation,diffuse_radiation,surface_pressure' +
         '&daily=temperature_2m_max,temperature_2m_min' +
-        '&hourly=precipitation_probability,wet_bulb_temperature_2m' +
+        '&hourly=precipitation_probability' +
         '&forecast_days=2' +
         '&timezone=auto' +
         '&timeformat=unixtime';
 
     return xhrGetJSON(encodeURI(url)).then(function(json) {
         var tempC = json.current.temperature_2m;
-        var temp = useFahrenheit ? Math.round((tempC * 9 / 5) + 32) : Math.round(tempC);
+        var temp = toDisplayTemp(tempC, useFahrenheit);
         var icon = iconFromOpenMeteo(json.current.weather_code, json.current.is_day);
 
         var humidity = json.current.relative_humidity_2m;
@@ -399,29 +402,24 @@ function fetchOpenMeteo(lat, lon, useFahrenheit) {
 
         var wbgtC = calcWBGTLiljegren(tempC, humidity, windMps, solarWpm2, fdb, fdif, cosZenith, pressureHPa);
         var wbgtLevel = wbgtLevelFromCelsius(wbgtC);
-       
 
-        var highC = json.daily.temperature_2m_max[0];
-        var lowC = json.daily.temperature_2m_min[0];
-        var high = useFahrenheit ? Math.round((highC * 9 / 5) + 32) : Math.round(highC);
-        var low = useFahrenheit ? Math.round((lowC * 9 / 5) + 32) : Math.round(lowC);
+        var high = toDisplayTemp(json.daily.temperature_2m_max[0], useFahrenheit);
+        var low = toDisplayTemp(json.daily.temperature_2m_min[0], useFahrenheit);
 
-        // `hourly` is indexed by hour-of-day starting at local midnight
-        // today (timezone=auto), for 48 hours (forecast_days=2, giving
-        // headroom for the +1 lookup even at 23:xx). Next hour's index is
-        // simply "current local hour + 1".
-        var nextHourIdx = new Date().getHours() + 1;
-        var probs = (json.hourly && json.hourly.precipitation_probability) || [];
+        // `hourly` starts at midnight *at the forecast location* (timezone=auto), which
+        // isn't necessarily the phone's timezone. hourly.time is in unix seconds, so the
+        // index of the next hour is just "hours since the first entry" + 1.
+        var hourly = json.hourly || {};
+        var probs = hourly.precipitation_probability || [];
+        var firstHour = hourly.time && hourly.time[0];
+        var nextHourIdx = (typeof firstHour === 'number')
+            ? Math.floor((Date.now() / 1000 - firstHour) / 3600) + 1
+            : new Date().getHours() + 1;
         var rainChance = (typeof probs[nextHourIdx] === 'number') ? probs[nextHourIdx] : 0;
-        
-        var wbgts = (json.hourly && json.hourly.wet_bulb_temperature_2m) || [];
-        var wbgtDirect = (typeof wbgts[nextHourIdx] === 'number') ? Math.round(wbgts[nextHourIdx]) : 0;
-
-        //var wbgtDirect = Math.round(json.hourly.wet_bulb_temperature_2m[0]);
 
         return {
-            icon: icon, temp: temp, high: high, low: low, rainChance: rainChance,
-            wbgtLevel: wbgtLevel, wbgtRawValue: Math.round(wbgtC), wbgtDirect: wbgtDirect
+            icon: icon, temp: temp, high: high, low: low,
+            rainChance: rainChance, wbgtLevel: wbgtLevel
         };
     });
 }
@@ -478,17 +476,10 @@ function fetchOpenWeatherMap(lat, lon, apiKey, useFahrenheit) {
 
         var wbgtC = calcWBGTLiljegren(tempC, humidity, windMps, solarWpm2, split.fdb, split.fdif, cosZenith, pressureHPa);
         var wbgtLevel = wbgtLevelFromCelsius(wbgtC);
-        var wbgtDirect = wbgtLevel;
 
         return {
-            icon: icon,
-            temp: temp,
-            high: high,
-            low: low,
-            rainChance: rainChance,
-            wbgtLevel: wbgtLevel,
-            wbgtRawValue: Math.round(wbgtC),
-            wbgtDirect: wbgtDirect
+            icon: icon, temp: temp, high: high, low: low,
+            rainChance: rainChance, wbgtLevel: wbgtLevel
         };
     });
 }
@@ -496,7 +487,7 @@ function fetchOpenWeatherMap(lat, lon, apiKey, useFahrenheit) {
 // ---- Public API ------------------------------------------------------
 
 // get(settings) -> Promise resolving to
-// { icon: <number>, temp: "<string>", tempFore: "<string>", rainSoon: <0|1> }.
+// { icon: <number>, temp: "<string>", tempFore: "<string>", rainSoon: <0|1>, wbgtLevel: <0-3> }.
 //
 //   UseWeather   (bool)   - master on/off switch
 //   WeatherProv  ('ds' | 'owm') - 'ds' = Open-Meteo, 'owm' = OpenWeatherMap
@@ -509,7 +500,7 @@ var getWeather = function(settings) {
 
     if (!useWeather) {
         console.log("Weather disabled - icon=0 temp=-- tempFore=--|-- rainSoon=0 wbgtLevel=0");
-        return Promise.resolve({ icon: 0, temp: '--', tempFore: '--|--', rainSoon: 0, wbgtLevel: 0, wbgtValue: '--' });
+        return Promise.resolve({ icon: 0, temp: '--', tempFore: '--|--', rainSoon: 0, wbgtLevel: 0 });
     }
 
     var useFahrenheit = !!settings.WeatherUnit;
@@ -529,25 +520,16 @@ var getWeather = function(settings) {
     }).then(function(result) {
         var rainSoon = result.rainChance >= RAIN_THRESHOLD_PERCENT ? 1 : 0;
 
-        // wbgtRawValue is always computed in Celsius internally (the hazard
-        // thresholds are Celsius too); convert only for display here.
-        var wbgtDisplay = result.wbgtRawValue;
-        if (useFahrenheit && typeof wbgtDisplay === 'number') {
-            wbgtDisplay = Math.round((wbgtDisplay * 9 / 5) + 32);
-        }
-
         console.log("Weather fetched (" + provider + ") - icon=" + result.icon +
             " temp=" + result.temp + " high=" + result.high + " low=" + result.low +
             " rainChance=" + result.rainChance + "% rainSoon=" + rainSoon +
-            " wbgtLevel=" + result.wbgtLevel + " wbgtValue=" + wbgtDisplay + " wbgtDirect=" + result.wbgtDirect);
+            " wbgtLevel=" + result.wbgtLevel);
         return {
             icon: result.icon,
             temp: String(result.temp),
             tempFore: String(result.high) + ' | ' + String(result.low),
             rainSoon: rainSoon,
-            wbgtLevel: result.wbgtLevel,
-            wbgtValue: String(wbgtDisplay),
-            wbgtDirect: result.wbgtDirect
+            wbgtLevel: result.wbgtLevel
         };
     });
 };
@@ -555,4 +537,3 @@ var getWeather = function(settings) {
 module.exports = {
     get: getWeather
 };
-
