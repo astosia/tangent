@@ -444,22 +444,17 @@ static void prv_save_settings(void) {
 
 // Set default settings
 static void prv_default_settings(void) {
- //settings.EnableSecondsHand = true;
- settings.AlwaysShowSubDial = false;
+  settings.AlwaysShowSubDial = false;
   settings.SecondsVisibleTime = 15;
   settings.EnableDate = true;
-//  settings.EnableMonth = false;
   settings.EnableBattery = true;
   settings.EnableBatteryLine = true;
-  settings.EnableLogo = false;
- // snprintf(settings.LogoText, sizeof(settings.LogoText), "%s", "tangent");
   settings.BackgroundColor1 = GColorOxfordBlue;
   settings.SubDialColor = GColorOxfordBlue;
   settings.MinuteHandShadowColor = GColorBlack;
   settings.MinorTickColor = GColorPictonBlue;
   settings.DateColor = GColorYellow;
   settings.HourDigitsColor = GColorYellow;
-  settings.HoursHandBorderColor = GColorDarkGray;
   settings.MinutesHandColor = GColorWhite;
   settings.MajorTickColor = GColorYellow;
   settings.SecondsHandColor = GColorRed;
@@ -482,11 +477,8 @@ static void prv_default_settings(void) {
   snprintf(settings.ThemeSelect, sizeof(settings.ThemeSelect), "%s", "bu");
   settings.BWShadowOn = true;
   settings.ShadowOn = true;
-  settings.Font = 1;
   snprintf(settings.VibeMode, sizeof(settings.VibeMode), "%s", "0");
   snprintf(settings.DateFormat, sizeof(settings.DateFormat), "%s", "0");
-  settings.AddZero12h = false;
-  settings.RemoveZero24h = false;
   settings.ForegroundShape = true;  //true = round, false = rect
   settings.MinuteCentreSize = config.HourCentreOuterRadius - 2;
   settings.HourCentreSize = config.HourCentreOuterRadius;
@@ -495,23 +487,19 @@ static void prv_default_settings(void) {
   settings.SecondInnerCentreSize = config.SecondHandCentreInnerRadius;
   settings.MinuteHandThickness = 2;
   settings.HourHandThickness = 2;
-  settings.DigitalHour = true;
   settings.BackSize = 4;
   settings.BackLen = config.analogue_hand_b;
   settings.Roman = false;
-  settings.SubDialChoice = 2;
-  settings.tz_mode = 0;
-  settings.tz_id = 0;
+  settings.SubDialChoice = 0;
   settings.tz_offset = 0;
+  settings.showremoteAMPM = true;
   settings.SmoothSweep = false;
   snprintf(settings.DateLanguage, sizeof(settings.DateLanguage), "%s", "auto");
-//  settings.BacklightInteraction = false;
 
   #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
 
   settings.UseWeather = false;
   settings.UpSlider = 30;
-  settings.WeatherUnit = 0;
   settings.RainSoon = false;
   settings.WBGTLevel = 0;
   settings.RefreshWeatherOnLaunch = false;
@@ -540,11 +528,11 @@ void update_offset_vars(int32_t total_seconds) {
 
 // Quiet time icon handler
 static void quiet_time_icon () {
-    // #ifdef BACKLIGHTON
-    // layer_set_hidden(s_canvas_qt_icon, quiet_time_is_active());
-    // #else
+    #ifdef BACKLIGHTON
+    layer_set_hidden(s_canvas_qt_icon, quiet_time_is_active());
+    #else
     layer_set_hidden(s_canvas_qt_icon, !quiet_time_is_active());
-    //#endif
+    #endif
 }
 
 static AppTimer *s_timeout_timer;
@@ -570,12 +558,6 @@ static void smooth_sweep_timer_handler(void *context) {
     s_smooth_sweep_timer = app_timer_register(SMOOTH_SWEEP_INTERVAL_MS, smooth_sweep_timer_handler, NULL);
   }
 }
-
-// static void start_smooth_sweep_timer(void) {
-//   if (settings.SmoothSweep && second_hand_is_active() && !s_smooth_sweep_timer) {
-//     s_smooth_sweep_timer = app_timer_register(SMOOTH_SWEEP_INTERVAL_MS, smooth_sweep_timer_handler, NULL);
-//   }
-// }
 
 static void start_smooth_sweep_timer(void) {
   if (settings.SmoothSweep && second_hand_is_active() && !s_smooth_sweep_timer) {
@@ -721,10 +703,8 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *monthhand_color_t = dict_find(iter, MESSAGE_KEY_MonthHandColor);
   Tuple *bwmonthhand_color_t = dict_find(iter, MESSAGE_KEY_BWMonthHandColor);
   Tuple *enable_date_t = dict_find(iter, MESSAGE_KEY_EnableDate);
-
   Tuple *enable_battery_t = dict_find(iter, MESSAGE_KEY_EnableBattery);
   Tuple *enable_battery_line_t = dict_find(iter, MESSAGE_KEY_EnableBatteryLine);
-
   Tuple *bwthemeselect_t = dict_find(iter, MESSAGE_KEY_BWThemeSelect);
   Tuple *themeselect_t = dict_find(iter, MESSAGE_KEY_ThemeSelect);
   Tuple *bg_color1_t = dict_find(iter, MESSAGE_KEY_BackgroundColor1);
@@ -745,12 +725,9 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *bwbtqt_color_t = dict_find(iter, MESSAGE_KEY_BWBTQTColor);
   Tuple *bwshadowon_t = dict_find(iter, MESSAGE_KEY_BWShadowOn);
   Tuple *shadowon_t = dict_find(iter, MESSAGE_KEY_ShadowOn);
-  Tuple *addzero12_t = dict_find(iter, MESSAGE_KEY_AddZero12h);
-  Tuple *remzero24_t = dict_find(iter, MESSAGE_KEY_RemoveZero24h);
   Tuple *majort_t = dict_find(iter, MESSAGE_KEY_showMajorTick);
   Tuple *minort_t = dict_find(iter, MESSAGE_KEY_showMinorTick);
   Tuple *fg_shape_t = dict_find(iter, MESSAGE_KEY_ForegroundShape);
-  Tuple *dig_t = dict_find(iter,MESSAGE_KEY_DigitalHour);
   Tuple *minhand_t = dict_find(iter, MESSAGE_KEY_MinuteHandThickness);
   Tuple *hrhand_t = dict_find(iter, MESSAGE_KEY_HourHandThickness);
   Tuple *minocent_t = dict_find(iter, MESSAGE_KEY_MinuteCentreSize);
@@ -765,14 +742,12 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   //Tuple *tzmode_t = dict_find(iter, MESSAGE_KEY_TZ_MODE);
   Tuple *subdialchoice_t = dict_find(iter,MESSAGE_KEY_SubDialChoice);
-  Tuple *tzid_t = dict_find(iter, MESSAGE_KEY_TZ_ID);
+  //Tuple *tzid_t = dict_find(iter, MESSAGE_KEY_TZ_ID);
   Tuple *tzoffset_t = dict_find(iter, MESSAGE_KEY_TZ_OFFSET);
   Tuple *remoteampm_t = dict_find(iter, MESSAGE_KEY_showremoteAMPM);
 
   Tuple *smoothsweep_t = dict_find(iter, MESSAGE_KEY_SmoothSweep);
   Tuple *datelang_t = dict_find(iter, MESSAGE_KEY_DateLanguage);
-
-  //Tuple *backlight_t = dict_find(iter, MESSAGE_KEY_BacklightInteraction);
 
   ///////Weather
   #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
@@ -785,11 +760,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple * rainsoon_t = dict_find(iter, MESSAGE_KEY_RainSoon);
   Tuple * wbgtlevel_t = dict_find(iter, MESSAGE_KEY_WBGTLevel);
   Tuple * refreshonlaunch_t = dict_find(iter, MESSAGE_KEY_RefreshWeatherOnLaunch);
-  //Tuple * rainamount_t = dict_find(iter, MESSAGE_KEY_RainAmount);
   
- 
-
-
   if (useweather_t) {
     settings.UseWeather = useweather_t->value->int32 != 0;
     settings_changed = true;
@@ -835,20 +806,9 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
      settings_changed = true;
   }
 
-  // if (rainamount_t){
-  //   snprintf(settings.RainAmount,sizeof(settings.RainAmount),"%s",safe_rain_amount((int)rainamount_t->value->int32));
-  //   settings_changed = true;
-  // }
-
   #endif
 
  ///////////////////////////
-
-
-  // if (backlight_t) {
-  //     settings.BacklightInteraction = backlight_t->value->int32 == 1;
-    
-  //  }
 
   if (datelang_t) {
     snprintf(settings.DateLanguage, sizeof(settings.DateLanguage), "%s", datelang_t->value->cstring);
@@ -857,11 +817,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   if (smoothsweep_t) {
       settings.SmoothSweep = smoothsweep_t->value->int32 == 1;
-     // layer_mark_dirty(s_canvas_tz);
-     // layer_mark_dirty(s_canvas_comp_bg);
-     // layer_mark_dirty(s_canvas_second_hand);
-     // layer_mark_dirty(s_canvas_month_hand);
-   }
+  }
 
   if (subdialchoice_t) {
       int value = atoi(subdialchoice_t->value->cstring);
@@ -881,12 +837,12 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   layer_mark_dirty(s_canvas_comp_bg);
   }
 
-  if(tzid_t) {
-  settings.tz_id = (int)tzid_t->value->int32;
-  time_t now = time(NULL);
-  tick_handler(localtime(&now), MINUTE_UNIT);
-  // layer_mark_dirty(g_layer);
-  }
+  // if(tzid_t) {
+  // settings.tz_id = (int)tzid_t->value->int32;
+  // time_t now = time(NULL);
+  // tick_handler(localtime(&now), MINUTE_UNIT);
+  // // layer_mark_dirty(g_layer);
+  // }
 
   if(tzoffset_t) {
   settings.tz_offset = (int)tzoffset_t->value->int32;
@@ -912,13 +868,6 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     settings.ForegroundShape = fg_shape_t->value->int32 == 1;
     layer_mark_dirty(s_bg_layer);
     layer_mark_dirty(s_canvas_layer);
-  }
-
-  if (dig_t) {
-    settings.DigitalHour = dig_t->value->int32 != 0;
-    layer_mark_dirty(s_bg_layer);
-    layer_mark_dirty(s_canvas_layer);
-    layer_mark_dirty(s_date_battery_logo_layer);
   }
 
   if (minocent_t) {
@@ -998,16 +947,6 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   if (dateform_t) {
     strncpy(settings.DateFormat, dateform_t->value->cstring, sizeof(settings.DateFormat)); 
     layer_mark_dirty(s_date_battery_logo_layer);
-  }
-
-  if (addzero12_t) {
-    settings.AddZero12h = addzero12_t->value->int32 != 0;
-    layer_mark_dirty(s_date_battery_logo_layer);
-  }
-
-  if (remzero24_t) {
-    settings.RemoveZero24h = remzero24_t->value->int32 != 0;
-     layer_mark_dirty(s_date_battery_logo_layer);
   }
 
   if (enable_date_t) {
@@ -1506,9 +1445,6 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     }
   }
 
-  // hide or show the seconds hand layer
-  //layer_set_hidden(s_canvas_second_hand, !(showSeconds && settings.EnableSecondsHand));
-
 }
 
 ///second hand and second hand background
@@ -1589,10 +1525,8 @@ static void draw_month_hand(GContext *ctx, int angle, int length, int back_lengt
 
   graphics_context_set_fill_color(ctx, shadow_color);
   graphics_fill_circle(ctx, origin_offset, settings.SecondOuterCentreSize);
-  //graphics_fill_circle(ctx, origin_offset_centre_shadow, settings.MinuteCentreSize); //started as 4
 
-  // Draw the shadow for the second hand, with a small offset
-
+  // Draw the shadow for the second hand, with a small offset 
   #ifdef PBL_COLOR
   if(settings.ShadowOn){
 
@@ -1638,8 +1572,7 @@ static void draw_month_hand(GContext *ctx, int angle, int length, int back_lengt
 static void draw_second_hand(GContext *ctx, int angle, int length, int back_length, GColor color) {
   GPoint origin = GPoint(config.seconds_circle_centre_x, config.seconds_circle_centre_y);
   GPoint origin_offset = GPoint(origin.x + config.hands_shadow/2, origin.y + config.hands_shadow/2);
- // GPoint origin_offset_minus = GPoint(origin.x - config.hands_shadow/2, origin.y - config.hands_shadow/2);
-
+ 
   GPoint p1 = polar_to_point_offset(origin, angle + 180, back_length);
   GPoint p2 = polar_to_point_offset(origin, angle, length);
   #ifdef PBL_BW
@@ -1652,10 +1585,8 @@ static void draw_second_hand(GContext *ctx, int angle, int length, int back_leng
  
   // Set the antialiasing
   graphics_context_set_antialiased(ctx, !settings.SmoothSweep);
-  // graphics_context_set_antialiased(ctx, true);
  
   // Draw the shadow for the second hand centre, with a small offset
-
   graphics_context_set_fill_color(ctx, shadow_color);
   graphics_fill_circle(ctx, origin_offset, settings.SecondOuterCentreSize);
 
@@ -1928,9 +1859,6 @@ static void draw_hand_center(GContext *ctx, GColor outer_color, GColor inner_col
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
   graphics_context_set_antialiased(ctx, true);
 
- // graphics_context_set_fill_color(ctx, outer_color);
- // graphics_fill_circle(ctx, origin, settings.MinuteCentreSize); //started as 4
-  
   graphics_context_set_fill_color(ctx, inner_color);
   graphics_fill_circle(ctx, origin, settings.InnerCentreSize); //started as 2
 
@@ -2072,10 +2000,6 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   GRect TwelveRect = GRect(1,6,bounds.size.w, 28);
   GRect SixRect = GRect(1,bounds.size.h-28-11,bounds.size.w, 28);
   graphics_context_set_text_color(ctx, settings.BWHourDigitsColor);
-  //graphics_draw_text(ctx, "12", FontHour, TwelveRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-  // if(!settings.EnableDate){
-  //   graphics_draw_text(ctx, "6", FontHour, SixRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-  // }
 
   graphics_draw_text(ctx, settings.Roman ? "XII" : "12", FontHour, TwelveRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
   if(!settings.EnableDate){
@@ -2101,23 +2025,6 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
         graphics_context_set_text_color(ctx, settings.BWDateColor);
         graphics_draw_text(ctx, BatterytoDraw, FontBattery, BatteryRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
       }
-
-                // GRect battery_arc_bounds = config.battery_arc_bounds[0];
-                
-                //     graphics_context_set_fill_color(ctx, settings.UVArcColor);
-                //     int32_t angle_start = DEG_TO_TRIGANGLE(30);
-                //     int32_t angle_end = DEG_TO_TRIGANGLE(180);
-                //     uint16_t inset_thickness = 8;
-                //     graphics_fill_radial(ctx,battery_arc_bounds,GOvalScaleModeFitCircle,inset_thickness,angle_start,angle_end);
-
-                //     graphics_context_set_fill_color(ctx, settings.UVMaxColor);// GColorBlack);
-                //     //graphics_fill_rect(ctx, UVMaxRect, 0, GCornerNone);
-                                    
-                //     int32_t angle_start_max = DEG_TO_TRIGANGLE(30 + (150* (100-s_battery_level))/100);
-                //     int32_t angle_end_max = DEG_TO_TRIGANGLE(180);
-                //     uint16_t inset_thickness_max = 8;
-                //     graphics_fill_radial(ctx,battery_arc_bounds,GOvalScaleModeFitCircle,inset_thickness_max,angle_start_max,angle_end_max);
-
    
   }
 
@@ -2181,8 +2088,8 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
             graphics_context_set_text_color(ctx, settings.BWDateColor);
            
       #ifdef BACKLIGHTON
-            //  graphics_draw_text(ctx, "24", FontDate, DateRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-            //  graphics_draw_text(ctx, "WED", FontDate, WeekdayRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+              graphics_draw_text(ctx, "24", FontDate, DateRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+              graphics_draw_text(ctx, "WED", FontDate, WeekdayRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
       #else
                 graphics_draw_text(ctx, datenow, FontDate, FullDateRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
       #endif
@@ -2227,11 +2134,9 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
         fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
         
-        //snprintf(digit_string, sizeof digit_string, "%d", i);
         get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
         FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
         FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
-       // FPoint p = clockToCartesian(center_digits, text_radius, digit_angle);
         fctx_set_rotation(&fctx, digit_rotation);
         fctx_set_offset(&fctx, p);
         fctx_draw_string(&fctx, digit_string, FCTX_Font, GTextAlignmentCenter, FTextAnchorMiddle);
@@ -2260,11 +2165,9 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
         fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
         
-        //snprintf(digit_string, sizeof digit_string, "%d", i);
         get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
         FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
         FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
-       // FPoint p = clockToCartesian(center_digits, text_radius, digit_angle);
         fctx_set_rotation(&fctx, digit_rotation);
         fctx_set_offset(&fctx, p);
         fctx_draw_string(&fctx, digit_string, FCTX_Font, GTextAlignmentCenter, FTextAnchorMiddle);
@@ -2273,11 +2176,6 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
       }
      }
     }
-
-
-  
-
-  
 
   //draw weekday and date text
   if (settings.EnableDate ) {
@@ -2450,11 +2348,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
 // Update procedure for the seconds hand layer
 static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
-    
-    // if(!settings.EnableSecondsHand){
-    //   return;
-    // }
-    
+        
     if (settings.SubDialChoice != 1 && settings.SubDialChoice != 2 && settings.SubDialChoice != 6) {
     return;
     }
@@ -2470,18 +2364,6 @@ static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
     if (!grect_equal(&full_bounds, &bounds)) {
       return;
     }
-  
-
-  // seconds = prv_tick_time->tm_sec;
-  // //for test & screenshots
-  // //int
-  // // seconds = 8;
-
-  // // if (!settings.EnableSecondsHand || !showSeconds) {
-  // //   seconds = 0;
-  // // }
-
-  // int seconds_angle = ((double)seconds / 60 * 360) - 90;
 
     int seconds_angle;
 
@@ -2561,10 +2443,6 @@ static void layer_update_proc_tz(Layer *layer, GContext *ctx) {
       if (!grect_equal(&full_bounds, &bounds)) {
         return;
       }
-
-      // Apply the second timezone's UTC offset (settings.tz_offset, in seconds) to the current UTC epoch time, then break it down with gmtime().
-      // time_t remote_epoch = time(NULL) + settings.tz_offset;
-      // g_remote_time = *gmtime(&remote_epoch);
 
       time_t remote_epoch = g_current_epoch + settings.tz_offset;
       g_remote_time = *gmtime(&remote_epoch);
@@ -3029,11 +2907,11 @@ static void prv_window_load(Window *window) {
      quiet_time_icon();
   s_canvas_bt_icon = layer_create(bounds);
     bool is_connected = connection_service_peek_pebble_app_connection();
-  //  #ifdef BACKLIGHTON
-  //  layer_set_hidden(s_canvas_bt_icon, !is_connected);
-  //  #else
+    #ifdef BACKLIGHTON
+    layer_set_hidden(s_canvas_bt_icon, !is_connected);
+    #else
     layer_set_hidden(s_canvas_bt_icon, is_connected);
-  //  #endif
+    #endif
   s_canvas_battery = layer_create(bounds);
   #if defined(PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
   s_canvas_weather = layer_create(bounds);

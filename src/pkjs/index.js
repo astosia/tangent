@@ -181,7 +181,7 @@ Pebble.addEventListener('webviewclosed', function(e) {
     var settings = clay.getSettings(e.response);
 
     applyTimezone(settings)
-                
+        ///// to minimise number of keys used by APLITE, delete unused keys from messages.  Might as well do this for other BW watches too
         .then(function(finalSettings) {
             delete finalSettings[messageKeys.APIKEY_User];
             delete finalSettings[messageKeys.IconNow];
@@ -203,6 +203,15 @@ Pebble.addEventListener('webviewclosed', function(e) {
             delete finalSettings[messageKeys.BatteryLineColor];
             delete finalSettings[messageKeys.BTQTColor];
 
+            delete finalSettings[messageKeys.WeatherProv];
+            delete finalSettings[messageKeys.Lat];
+            delete finalSettings[messageKeys.Long];
+            delete finalSettings[messageKeys.LocationQuery];
+            delete finalSettings[messageKeys.TZ_CODE];
+            delete finalSettings[messageKeys.TZ_MODE];
+            delete finalSettings[messageKeys.TZ_ID];
+
+
             sendAppMessage(finalSettings);
         });
         
@@ -216,6 +225,15 @@ Pebble.addEventListener('webviewclosed', function(e) {
         
         .then(function(finalSettings) {
             delete finalSettings[messageKeys.APIKEY_User];
+
+            delete finalSettings[messageKeys.WeatherProv];
+            delete finalSettings[messageKeys.Lat];
+            delete finalSettings[messageKeys.Long];
+            delete finalSettings[messageKeys.LocationQuery];
+            delete finalSettings[messageKeys.TZ_CODE];
+            delete finalSettings[messageKeys.TZ_MODE];
+            delete finalSettings[messageKeys.TZ_ID];
+
             sendAppMessage(finalSettings);
         });
     } 

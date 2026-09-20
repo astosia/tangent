@@ -129,12 +129,6 @@ module.exports = [
           }
           ]
         },
-        // {
-        // "type": "toggle",
-        // "label": "Show Larger Sub-dial",
-        // "messageKey": "BigSub",
-        // "defaultValue": false
-        // },
         {
         "type": "select",
         "messageKey": "SubDialChoice",
@@ -172,34 +166,12 @@ module.exports = [
             }
           ]
       },
-      // {
-      //   "type": "toggle",
-      //   "label": "Month hand visible",
-      //   "messageKey": "EnableMonth",
-      //   "description": "Shows on sub-dial, 12 position = December, 6 = June",
-      //   "defaultValue": false
-      // },
-      // {
-      //   "type": "toggle",
-      //   "label": "Seconds hand visible",
-      //   "messageKey": "EnableSecondsHand",
-      //   "description": "Shows on sub-dial",
-      //   "defaultValue": true
-      // },
       {
         "type": "heading",
         "id": "SECONDS_HEADING",
         "defaultValue": "Second hand options",
         "description": "Use when second hand is selected on sub-dial"
       },
-      // {
-      //   "type": "toggle",
-      //   "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT"],
-      //   "messageKey": "BacklightInteraction",
-      //   "label": "Use Backlight to trigger seconds instead of shake",
-      //   "description": "When Seconds with Timeout is on the sub-dial, shake to show the seconds hand for selected duration",
-      //   "defaultValue":false
-      // },
       {
         "type": "slider",
         "messageKey": "SecondsVisibleTime",
@@ -225,13 +197,6 @@ module.exports = [
         "description": "Updates the second hand 5 times per second to give a smoother movement - will reduce battery life!",
         "defaultValue": false
       },
-      // {
-      //   "type": "toggle",
-      //   "messageKey": "TZ_MODE",
-      //   "label": "Show 2nd Timezone",
-      //   "description": "OFF = Don't show, ON = Show",
-      //   "defaultValue": false
-      // },
       {
         "type": "heading",
         "id": "TZ_HEADING",
@@ -245,15 +210,6 @@ module.exports = [
         "description": "Shows extra circle on the sub-dial hour hand when 2nd Timezone is PM",
         "defaultValue": true
       },
-      // {
-      //   "type": "select",
-      //   "messageKey": "TZ_ID",
-      //   "label": "2nd Timezone",
-      //   "description": "Data provided by timeapi.io",
-      //   "options": [
-      //     { "label": "Select a Zone", "value": "" }
-      //     ]
-      // },
       {
         "type": "input",
         "messageKey": "TZ_ID",
@@ -280,64 +236,6 @@ module.exports = [
       }
     ]
   },
-      // {
-      //   "type": "select",
-      //   "messageKey": "SecondsVisibleTime",
-      //   "defaultValue": 135,
-      //   "label": "Seconds hand visibility",
-      //   "description": "Visibility of seconds hand, in seconds. Timer starts after a tap, shake, or watchface launch. Setting to max value will keep the seconds hand permanently on",
-      //   "options": [
-      //       { 
-      //         "label": "Off", 
-      //         "value": 0 
-      //       },
-      //       { 
-      //         "label": "15 seconds",
-      //         "value": 15 
-      //       },
-      //       { 
-      //         "label": "30 seconds",
-      //         "value": 30 
-      //       },
-      //       { 
-      //         "label": "45 seconds",
-      //         "value": 30 
-      //       },
-      //       { 
-      //         "label": "1 minute",
-      //         "value": 60 
-      //       },
-      //       { 
-      //         "label": "90 seconds",
-      //         "value": 90
-      //       },
-      //       { 
-      //         "label": "2 minutes",
-      //         "value": 120
-      //       },
-      //       { 
-      //         "label": "Always on",
-      //         "value": 135
-      //       }
-      //     ]
-      // },
-      // {
-      //   "type": "toggle",
-      //   "label": "Logo visible",
-      //   "messageKey": "EnableLogo",
-      //   "defaultValue": false
-      // },
-      // {
-      //    "type": "input",
-      //    "messageKey": "LogoText",
-      //    "defaultValue": "tangent",
-      //    "label": "Custom Logo Text",
-      //    "attributes": {
-      //      "placeholder": "tangent"
-      //    }
-      // },
-
-  
   {
     "type": "submit",
     "defaultValue": "Save"
