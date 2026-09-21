@@ -68,4 +68,5 @@ typedef struct ClaySettings {
   bool SmoothSweep;
   char DateLanguage[6];
   bool RefreshWeatherOnLaunch;
+  bool ShowBTQTIcons;
 } __attribute__((__packed__)) ClaySettings;

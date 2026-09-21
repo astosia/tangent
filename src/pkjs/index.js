@@ -21,37 +21,17 @@ var isbw = (Pebble_platform === 'aplite' || Pebble_platform === 'diorite' || Peb
 // Keys the watch never reads. Clay needs them (config.js items / weather.js inputs),
 // but sending them would only use up AppMessage space.
 var PHONE_ONLY_KEYS = [
-    'APIKEY_User', 
-    'WeatherProv', 
-    'Lat', 
-    'Long', 
-    'LocationQuery', 
-    'WeatherUnit',
-    'TZ_ID', 
-    'TZ_ID_STATE'
+    'APIKEY_User', 'WeatherProv', 'Lat', 'Long', 'LocationQuery', 'WeatherUnit',
+    'TZ_ID', 'TZ_ID_STATE', 'PreviewPlatformOverride'
 ];
 
 // Keys that only matter on colour watches. To minimise the number of keys sent to
 // APLITE (and the other B&W watches) these are dropped for isbw platforms.
 var COLOUR_ONLY_KEYS = [
-    'IconNow', 
-    'WeatherTemp', 
-    'TempFore', 
-    'RainSoon', 
-    'WBGTLevel',
-    'ThemeSelect', 
-    'BackgroundColor1', 
-    'MinuteHandShadowColor', 
-    'MajorTickColor',
-    'MinorTickColor', 
-    'HourDigitsColor', 
-    'MinutesHandColor', 
-    'SecondsHandColor',
-    'MonthHandColor', 
-    'SubDialColor', 
-    'DateColor', 
-    'BatteryLineColor', 
-    'BTQTColor'
+    'IconNow', 'WeatherTemp', 'TempFore', 'RainSoon', 'WBGTLevel',
+    'ThemeSelect', 'BackgroundColor1', 'MinuteHandShadowColor', 'MajorTickColor',
+    'MinorTickColor', 'HourDigitsColor', 'MinutesHandColor', 'SecondsHandColor',
+    'MonthHandColor', 'SubDialColor', 'DateColor', 'BatteryLineColor', 'BTQTColor'
 ];
 
 // Removes the named keys from a numeric-keyed settings/message object.

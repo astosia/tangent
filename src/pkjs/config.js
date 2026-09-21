@@ -8,17 +8,39 @@ module.exports = [
     "defaultValue": "<p>by astosia</p>"
   },
   {
+    "type": "select",
+    "messageKey": "PreviewPlatformOverride",
+    "label": "Preview watch model<br>(if preview looks wrong)",
+    //"description": "Only changes the preview on this page, not your watch.",
+    "defaultValue": "auto",
+    "options": [
+      { "label": "Auto-detect", "value": "auto" },
+      { "label": "Pebble / Steel", "value": "aplite" },
+      { "label": "Time / Time Steel", "value": "basalt" },
+      { "label": "Time Round", "value": "chalk" },
+      { "label": "P2 HR/SE", "value": "diorite" },
+      { "label": "Time 2", "value": "emery" },
+      { "label": "P2 Duo", "value": "flint" },
+      { "label": "Round 2", "value": "gabbro" }
+    ]
+  },
+  {
     "type": "section",
     "items": [
+      {
+        "type": "text",
+        "id": "WATCH_PREVIEW",
+        "defaultValue": ""
+      },
       {
         "type": "heading",
         "defaultValue": "Features"
       },
       {
         "type": "toggle",
-        "label": "Watchface Style",
+        "label": "Watchface Style: Rectangular or Round",
         "messageKey": "ForegroundShape",
-        "description": "Off = Rectangular, On = Round",
+        //"description": "Off = Rectangular, On = Round",
         "capabilities": [
           "RECT"
         ],
@@ -26,17 +48,17 @@ module.exports = [
       },
       {
         "type": "toggle",
-        "label": "Digit Style",
+        "label": "Dial Digits: Numbers or Roman Numerals",
         "messageKey": "Roman",
-        "description": "Off = Numbers, On = Roman Numerals",
+//        "description": "Off = Numbers, On = Roman Numerals",
         "defaultValue": false
       },
       {
         "type": "toggle",
         "label": "Date visible",
         "messageKey": "EnableDate",
-        "description": "Replaces the 6 at the bottom of the dial. Select format:",
-        "defaultValue": true
+       // "description": "Replaces the 6 at the bottom of the dial. Select format:",
+        "defaultValue": false
       },
       {
         "type": "radiogroup",
@@ -86,6 +108,11 @@ module.exports = [
         ]
       },
       {
+        "type": "text",
+        "id": "WATCH_PREVIEW_2",
+        "defaultValue": ""
+      },
+      {
         "type": "toggle",
         "label": "Battery Value visible",
         "messageKey": "EnableBattery",
@@ -110,6 +137,13 @@ module.exports = [
         "defaultValue": true
       },
       {
+        "type": "toggle",
+        "label": "Bluetooth & Quiet Time Icons visible",
+        "messageKey": "ShowBTQTIcons",
+        "description": "Off hides both the Bluetooth-disconnected and Quiet Time icons whenever they'd otherwise appear",
+        "defaultValue": true
+      },
+      {
         "type": "radiogroup",
         "messageKey": "VibeMode",
         "label": "Vibrate on Bluetooth Disconnect",
@@ -128,6 +162,11 @@ module.exports = [
              "value": "2" 
           }
           ]
+        },
+        {
+        "type": "text",
+        "id": "WATCH_PREVIEW_3",
+        "defaultValue": ""
         },
         {
         "type": "select",
@@ -246,14 +285,20 @@ module.exports = [
     "items": [
     {
         "type": "heading",
+        "id": "WEATHER_HEADING",
         "defaultValue": "Weather"
     },
     {
         "type": "toggle",
         "messageKey": "UseWeather",
         "label": "Show Weather",
-        "description": "current & forecast temp & condition icon replaces battery value",
+        "description": "current and forecast high | low temperatures & condition icons replace battery value. Also shows alerts for rain in next hour, and current very high wet bulb globe temperatures",
         "defaultValue": false
+    },
+    {
+        "type": "text",
+        "id": "WATCH_PREVIEW_4",
+        "defaultValue": ""
     },
     {
         "type": "select",
@@ -275,9 +320,9 @@ module.exports = [
         "type": "input",
         "messageKey": "LocationQuery",
         "label": "Location",
-        "description": "Start typing a city, place name or postcode/zipcode... Leave blank to use GPS location for weather and sunrise/sunset times. Location search data uses ©OpenStreetMap.",
+        "description": "Start typing a city, place name or postcode/zipcode... Leave blank to use GPS location. Location search data uses ©OpenStreetMap.",
         "attributes": {
-          "placeholder": "e.g.: London, UK (leave blank to use GPS)"
+          "placeholder": "e.g. London, UK (leave empty to use GPS)"
         }
       },
       {
@@ -300,7 +345,7 @@ module.exports = [
         "messageKey": "APIKEY_User",
         "defaultValue": "",
         "label": "OWM API Key",
-        "description": "Weather data uses Open-Meteo by default which does not require an API key.  If you prefer OpenWeatherMap, you can <a href =https://home.openweathermap.org/users/sign_up/>register for a free personal API key here</a>.",
+        "description": "Weather data uses Open-Meteo by default which does not require an API key.  If you prefer OpenWeatherMap, you can <a href =https://home.openweathermap.org/users/sign_up/>register for a free personal API key here</a>. There is a free tier",
         "attributes": {
           "placeholder": "Paste OpenWeatherMap API Key here, leave blank for Open-Meteo"
         }
@@ -319,7 +364,7 @@ module.exports = [
         "type": "toggle",
         "messageKey": "RefreshWeatherOnLaunch",
         "label": "Also Refresh Weather on Relaunch",
-        "description": "In addition to update interval above, also request fresh weather every time watchface loads. Off = keeps last known reading between relaunches",
+        "description": "In addition to the update interval above, also request fresh weather every time watchface loads. Off = keeps last known reading between relaunches",
         "defaultValue": false
       },
       {
@@ -330,6 +375,7 @@ module.exports = [
       },
       {
         "type": "submit",
+        "id": "WEATHER_SAVE",
         "defaultValue": "Save"
       }
     ]
@@ -341,6 +387,11 @@ module.exports = [
       {
         "type": "heading",
         "defaultValue": "Colours"
+      },
+      {
+        "type": "text",
+        "id": "WATCH_PREVIEW_5",
+        "defaultValue": ""
       },
       {
         "type": "toggle",
@@ -355,19 +406,19 @@ module.exports = [
         "label": "COLOUR THEME SELECT",
         "options": [
           {
-            "label": "White Background",
+            "label": "White",
             "value": "wh"
           },
           {
-            "label": "Black Background",
+            "label": "Black",
             "value": "bl"
           },
           {
-              "label": "Blue Background",
+              "label": "Blue",
               "value": "bu"
           },
           {
-              "label": "Purple Background",
+              "label": "Purple",
               "value": "pl"
           },
           {
@@ -382,7 +433,13 @@ module.exports = [
       },
       {
            "type": "heading",
+           "id": "CUSTOM_COLOURS_HEADING",
            "defaultValue": "Custom Colours"
+      },
+      {
+        "type": "text",
+        "id": "WATCH_PREVIEW_6",
+        "defaultValue": ""
       },
       {
         "type": "color",
@@ -422,13 +479,13 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Seconds Hand Colour",
+        "label": "Sub-dial Hand 1:<br>Seconds or 2nd timezone minutes",
         "messageKey": "SecondsHandColor",
         "defaultValue": "FF5500"
       },
       {
         "type": "color",
-        "label": "Month Hand Colour",
+        "label": "Sub-dial Hand 2:<br>Month or 2nd timezone hour",
         "messageKey": "MonthHandColor",
         "defaultValue": "FF5500"
       },
@@ -440,13 +497,13 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Date, Battery & Weather Text Colour",
+        "label": "Date & Battery/Weather Text Colour",
         "messageKey": "DateColor",
         "defaultValue": "000000"
       },
       {
         "type": "color",
-        "label": "Battery Meter Colour",
+        "label": "Battery Line Colour",
         "messageKey": "BatteryLineColor",
         "defaultValue": "FF5500"
       },
@@ -465,6 +522,11 @@ module.exports = [
       {
         "type": "heading",
         "defaultValue": "Colours"
+      },
+      {
+        "type": "text",
+        "id": "WATCH_PREVIEW_5",
+        "defaultValue": ""
       },
       {
         "type": "toggle",
@@ -491,11 +553,17 @@ module.exports = [
              "value": "cu"
            }
          ]
-       },
-          {
+      },
+      {
             "type": "heading",
+            "id": "CUSTOM_COLOURS_HEADING",
             "defaultValue": "Custom Colours"
-          },
+      },
+      {
+        "type": "text",
+        "id": "WATCH_PREVIEW_6",
+        "defaultValue": ""
+      },
       {
         "type": "color",
         "label": "Background Colour",
@@ -518,7 +586,7 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Hour & Minute Hand & Battery Meter Colour",
+        "label": "Hands & Battery Line Colour",
         "messageKey": "BWMinHandBatLineColor",
         "defaultValue": "000000"
       },
@@ -538,25 +606,29 @@ module.exports = [
         "type": "color",
         "label": "Sub-dial Background Colour",
         "messageKey": "BWSubDialColor",
-        "defaultValue": "FFFFFF"
+        "defaultValue": "FFFFFF",
+        "allowGray": true
       },
       {
         "type": "color",
         "label": "Hours Digits Colour",
         "messageKey": "BWHourDigitsColor",
-        "defaultValue": "000000"
+        "defaultValue": "000000",
+        "allowGray": true
       },
       {
         "type": "color",
         "label": "Date, Battery Value & Weather Text Colour",
         "messageKey": "BWDateColor",
-        "defaultValue": "000000"
+        "defaultValue": "000000",
+        "allowGray": true
       },
       {
         "type": "color",
         "label": "Quiet Time and Bluetooth Icon Colour",
         "messageKey": "BWBTQTColor",
-        "defaultValue": "000000"
+        "defaultValue": "000000",
+        "allowGray": true
       }
     ]
   },
@@ -573,9 +645,9 @@ module.exports = [
       },
       {
         "type": "slider",
-        "label": "Minute Hand & Second/Month Hand Thickness",
+        "label": "Minute & Sub-dial Hand Thickness: Default = 2",
         "messageKey": "MinuteHandThickness",
-        "description": "Default = 2",
+//        "description": "Default = 2",
         "defaultValue": 2,
         "min": 1,
         "max": 5,
@@ -583,9 +655,9 @@ module.exports = [
       },
       {
         "type": "slider",
-        "label": "Hour Hand Thickness",
+        "label": "Hour Hand Thickness: Default = 2",
         "messageKey": "HourHandThickness",
-        "description": "Default = 2",
+//        "description": "Default = 2",
         "defaultValue": 2,
         "min": 1,
         "max": 7,
@@ -594,10 +666,10 @@ module.exports = [
       {
         "type": "slider",
         "capabilities": ["NOT_PLATFORM_GABBRO", "NOT_PLATFORM_EMERY"],
-        "label": "Minute Hand Centre Radius",
+        "label": "Minute Hand Centre Radius: Default = 4",
         "messageKey": "MinuteCentreSize",
         "defaultValue": 4,
-        "description": "Default = 4",
+//        "description": "Default = 4",
         "min": 1,
         "max": 11,
         "step": 1
@@ -605,10 +677,10 @@ module.exports = [
       {
         "type": "slider",
         "capabilities": ["NOT_PLATFORM_GABBRO", "NOT_PLATFORM_EMERY"],
-        "label": "Hour Hand Centre Radius",
+        "label": "Hour Hand Centre Radius: Default = 6",
         "messageKey": "HourCentreSize",
         "defaultValue": 6,
-        "description": "Default = 6",
+//        "description": "Default = 6",
         "min": 1,
         "max": 11,
         "step": 1
@@ -616,10 +688,10 @@ module.exports = [
       {
         "type": "slider",
         "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_EMERY"],
-        "label": "Minute Hand Centre Radius",
+        "label": "Minute Hand Centre Radius: Default = 7",
         "messageKey": "MinuteCentreSize",
         "defaultValue": 7,
-        "description": "Default = 7",
+//        "description": "Default = 7",
         "min": 1,
         "max": 11,
         "step": 1
@@ -627,10 +699,10 @@ module.exports = [
       {
         "type": "slider",
         "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_GABBRO"],
-        "label": "Minute Hand Centre Radius",
+        "label": "Minute Hand Centre Radius: Default = 5",
         "messageKey": "MinuteCentreSize",
         "defaultValue": 5,
-        "description": "Default = 5",
+//        "description": "Default = 5",
         "min": 1,
         "max": 11,
         "step": 1
@@ -638,10 +710,10 @@ module.exports = [
       {
         "type": "slider",
         "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_EMERY"],
-        "label": "Hour Hand Centre Radius",
+        "label": "Hour Hand Centre Radius: Default = 9",
         "messageKey": "HourCentreSize",
         "defaultValue": 9,
-        "description": "Default = 9",
+//        "description": "Default = 9",
         "min": 1,
         "max": 11,
         "step": 1
@@ -649,21 +721,26 @@ module.exports = [
       {
         "type": "slider",
         "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_GABBRO"],
-        "label": "Hour Hand Centre Radius",
+        "label": "Hour Hand Centre Radius: Default = 7",
         "messageKey": "HourCentreSize",
         "defaultValue": 7,
-        "description": "Default = 7",
+//        "description": "Default = 7",
         "min": 1,
         "max": 11,
         "step": 1
+      },
+      {
+        "type": "text",
+        "id": "WATCH_PREVIEW_7",
+        "defaultValue": ""
       },
       {
         "type": "slider",
         "capabilities": ["NOT_PLATFORM_GABBRO", "NOT_PLATFORM_EMERY"],
-        "label": "Hands Centre Inner Radius",
+        "label": "Inner Radius: Default = 2",
         "messageKey": "InnerCentreSize",
         "defaultValue": 2,
-        "description": "Default = 2",
+//        "description": "Default = 2",
         "min": 0,
         "max": 9,
         "step": 1
@@ -671,10 +748,10 @@ module.exports = [
       {
         "type": "slider",
         "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_GABBRO"],
-        "label": "Hands Centre Inner Radius",
+        "label": "Inner Radius: Default = 2",
         "messageKey": "InnerCentreSize",
         "defaultValue": 2,
-        "description": "Default = 2",
+//        "description": "Default = 2",
         "min": 0,
         "max": 9,
         "step": 1
@@ -682,46 +759,52 @@ module.exports = [
       {
         "type": "slider",
         "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT", "NOT_PLATFORM_EMERY"],
-        "label": "Hands Centre Inner Radius",
+        "label": "Inner Radius: Default = 3",
         "messageKey": "InnerCentreSize",
         "defaultValue": 3,
-        "description": "Default = 3",
+//        "description": "Default = 3",
         "min": 0,
         "max": 9,
         "step": 1
       },
       {
         "type": "slider",
-        "label": "Hands End Radius",
+        "label": "End Radius: Default = 0",
         "messageKey": "BackSize",
         "defaultValue": 0,
-        "description": "Default = 0",
+//        "description": "Default = 0",
         "min": 0,
         "max": 9,
         "step": 1
       },
       {
         "type": "slider",
-        "label": "Hands End Length",
+        "label": "End Length: Default = 0",
         "messageKey": "BackLen",
         "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT"],
         "defaultValue": 0,
-        "description": "Default = 0",
+//        "description": "Default = 0",
         "min": 0,
         "max": 40,
         "step": 2
       },
       {
         "type": "slider",
-        "label": "Hands End Length",
+        "label": "End Length: Default = 0",
         "messageKey": "BackLen",
         "capabilities": ["NOT_PLATFORM_GABBRO", "NOT_PLATFORM_EMERY"],
         "defaultValue": 0,
-        "description": "Default = 0",
+//        "description": "Default = 0",
         "min": 0,
         "max": 30,
         "step": 2
       }
+      // },
+      // {
+      //   "type": "text",
+      //   "id": "WATCH_PREVIEW_8",
+      //   "defaultValue": ""
+      // }
     ]
   },
   {

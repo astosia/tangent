@@ -455,7 +455,7 @@ static void prv_save_settings(void) {
 static void prv_default_settings(void) {
   settings.AlwaysShowSubDial = false;
   settings.SecondsVisibleTime = 15;
-  settings.EnableDate = true;
+  settings.EnableDate = false;
   settings.EnableBattery = true;
   settings.EnableBatteryLine = true;
   settings.BackgroundColor1 = GColorOxfordBlue;
@@ -504,6 +504,7 @@ static void prv_default_settings(void) {
   settings.showremoteAMPM = true;
   settings.SmoothSweep = false;
   snprintf(settings.DateLanguage, sizeof(settings.DateLanguage), "%s", "auto");
+  settings.ShowBTQTIcons = true;
 
   #ifdef HAS_WEATHER
 
@@ -518,6 +519,8 @@ static void prv_default_settings(void) {
 
   
 }
+
+
 
 static int REMOTE_TIME_OFFSET_HOURS = 0;
 static int REMOTE_TIME_OFFSET_MINUTES = 0;
@@ -540,7 +543,7 @@ static void quiet_time_icon () {
     #ifdef BACKLIGHTON
     layer_set_hidden(s_canvas_qt_icon, quiet_time_is_active());
     #else
-    layer_set_hidden(s_canvas_qt_icon, !quiet_time_is_active());
+    layer_set_hidden(s_canvas_qt_icon, !settings.ShowBTQTIcons || !quiet_time_is_active());
     #endif
 }
 
@@ -636,9 +639,15 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
   }
 }
 
+static void prv_update_bt_icon_visibility(bool connected) {
+  layer_set_hidden(s_canvas_bt_icon, !settings.ShowBTQTIcons || connected);
+}
+
 static void bluetooth_vibe_icon (bool connected) {
 
-   layer_set_hidden(s_canvas_bt_icon, connected);
+   prv_update_bt_icon_visibility(connected);
+
+   //layer_set_hidden(s_canvas_bt_icon, connected);
 
     if (!connected && strcmp(settings.VibeMode, "2") != 0) {
     if (strcmp(settings.VibeMode, "1") == 0 || !quiet_time_is_active()) {
@@ -855,6 +864,12 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple * rainsoon_t = dict_find(iter, MESSAGE_KEY_RainSoon);
   Tuple * wbgtlevel_t = dict_find(iter, MESSAGE_KEY_WBGTLevel);
   Tuple * refreshonlaunch_t = dict_find(iter, MESSAGE_KEY_RefreshWeatherOnLaunch);
+  Tuple *show_btqt_icons_t = dict_find(iter, MESSAGE_KEY_ShowBTQTIcons);
+
+  if (show_btqt_icons_t) {
+    settings.ShowBTQTIcons = show_btqt_icons_t->value->int32 != 0;
+    settings_changed = true;
+  }
   
   if (useweather_t) {
     settings.UseWeather = useweather_t->value->int32 != 0;
