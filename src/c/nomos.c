@@ -513,6 +513,9 @@ static void prv_default_settings(void) {
   settings.RainSoon = false;
   settings.WBGTLevel = 0;
   settings.RefreshWeatherOnLaunch = false;
+  settings.ShowForecast = true;
+  settings.ShowCurrent = true;
+  settings.ShowAlert = true;
 
   #endif
 
@@ -858,6 +861,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple * useweather_t = dict_find(iter, MESSAGE_KEY_UseWeather);
   Tuple * frequpdate = dict_find(iter, MESSAGE_KEY_UpSlider);
 
+  Tuple * showfore_t = dict_find(iter, MESSAGE_KEY_ShowForecast);
+  Tuple * showcurr_t = dict_find(iter, MESSAGE_KEY_ShowCurrent);
+  Tuple * showal_t = dict_find(iter, MESSAGE_KEY_ShowAlert);
+
   Tuple * wtemp_t = dict_find(iter, MESSAGE_KEY_WeatherTemp);
   Tuple * iconnow_tuple = dict_find(iter, MESSAGE_KEY_IconNow);
   Tuple * wforetemp_t = dict_find(iter, MESSAGE_KEY_TempFore);
@@ -873,6 +880,21 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   
   if (useweather_t) {
     settings.UseWeather = useweather_t->value->int32 != 0;
+    settings_changed = true;
+  }
+
+   if (showfore_t) {
+    settings.ShowForecast = showfore_t->value->int32 != 0;
+    settings_changed = true;
+  }
+
+   if (showcurr_t) {
+    settings.ShowCurrent = showcurr_t->value->int32 != 0;
+    settings_changed = true;
+  }
+
+   if (showal_t) {
+    settings.ShowAlert = showal_t->value->int32 != 0;
     settings_changed = true;
   }
 
@@ -2119,7 +2141,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   
     //draw battery value
   #ifdef HAS_WEATHER
-  if(settings.EnableBattery && grect_equal(&full_bounds, &bounds) && !settings.UseWeather){
+  if(settings.EnableBattery && grect_equal(&full_bounds, &bounds) && (!settings.UseWeather || (settings.UseWeather && !settings.ShowCurrent))){
   
             fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
             FPoint battery_pos;
@@ -2518,15 +2540,17 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
     bool weatherStale = (s_last_weather_fetch == 0) ||
         ((g_current_epoch - s_last_weather_fetch) > staleAfterSeconds);
 
-    char CondToDraw[4];
+    if (settings.ShowCurrent) {
+      char CondToDraw[4];
     snprintf(CondToDraw, sizeof(CondToDraw), "%s",
              (s_launch_weather_delay || weatherStale) ? WEATHER_STALE_ICON : settings.iconnowstring);
 
     GRect IconNowRect = settings.EnableBatteryLine ? config.IconNowRect[0] : config.IconNowRect2[0];
     graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
     graphics_draw_text(ctx, CondToDraw, FontWeatherIcons, IconNowRect, GTextOverflowModeFill, GTextAlignmentRight, NULL);
+    }
 
-    if (settings.RainSoon) {
+    if (settings.RainSoon && settings.ShowAlert) {
 
       GRect RainIconRect = config.RainIconRect[0];
       graphics_draw_text(ctx, "\U0000F084", FontWeatherIcons, RainIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
@@ -2538,7 +2562,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
     graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
     graphics_draw_text(ctx, "\U0000F0ED", FontWeatherIcons, WarningIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
     #else
-    if (settings.WBGTLevel > 0) {
+    if (settings.WBGTLevel > 0 && settings.ShowAlert) {
       // Three distinct glyphs, one per severity level, rather than one glyph  - F0EC (yellow), F0ED (red), F0EE (black).
       const char *warnGlyph;
       switch (settings.WBGTLevel) {
@@ -2571,7 +2595,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
             fctx_set_text_em_height(&fctx, FCTX_Font, font_size_temp);
 
                 // Formats and draws the battery percentage text
-              if (settings.EnableBatteryLine) {
+              if (settings.EnableBatteryLine && settings.ShowCurrent) {
 
                   temp_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 2 ));
                   temp_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z - 2 - 1)* bounds.size.h/full_bounds.size.h);
@@ -2585,7 +2609,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
                   fctx_draw_string(&fctx, TempToDraw, FCTX_Font, GTextAlignmentLeft, FTextAnchorTop);
                   fctx_end_fill(&fctx);
                 }
-                else { //shift the text slightly when there's no battery line
+                else if(settings.ShowCurrent){ //shift the text slightly when there's no battery line
 
                   temp_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 2));
                   temp_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y - 2 - 1)* bounds.size.h/full_bounds.size.h);
@@ -2598,7 +2622,10 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
                   fctx_draw_string(&fctx, TempToDraw, FCTX_Font, GTextAlignmentLeft, FTextAnchorTop);
                   fctx_end_fill(&fctx);
                 }
-                int font_size_fore = (config.font_size_battery) +2 * bounds.size.h/full_bounds.size.h;
+                
+                
+                if(settings.ShowForecast){
+                  int font_size_fore = (config.font_size_battery) +2 * bounds.size.h/full_bounds.size.h;
 
                 fctx_begin_fill(&fctx);
                 fctx_set_text_em_height(&fctx, FCTX_Font, font_size_fore);
@@ -2614,6 +2641,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
                 fctx_set_offset(&fctx, fore_pos);
                 fctx_draw_string(&fctx, TempForeToDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
                 fctx_end_fill(&fctx);
+                }
 
     fctx_deinit_context(&fctx);
 

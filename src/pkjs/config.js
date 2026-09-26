@@ -292,8 +292,29 @@ module.exports = [
         "type": "toggle",
         "messageKey": "UseWeather",
         "label": "Show Weather",
-        "description": "current and forecast high | low temperatures & condition icons replace battery value. Also shows alerts for rain in next hour, and current very high wet bulb globe temperatures",
+        "description": "current condition icon & temperature replaces battery value. Also shows alerts for rain in next hour, and current very high wet bulb globe temperatures",
         "defaultValue": false
+    },
+    {
+        "type": "toggle",
+        "messageKey": "ShowCurrent",
+        "label": "Show Current Icon & Temperature",
+//        "description": "current and forecast high | low temperatures & condition icons replace battery value. Also shows alerts for rain in next hour, and current very high wet bulb globe temperatures",
+        "defaultValue": true
+    },
+    {
+        "type": "toggle",
+        "messageKey": "ShowForecast",
+        "label": "Show Forcast High & Low Temp",
+//        "description": "current and forecast high | low temperatures & condition icons replace battery value. Also shows alerts for rain in next hour, and current very high wet bulb globe temperatures",
+        "defaultValue": true
+    },
+    {
+        "type": "toggle",
+        "messageKey": "ShowAlert",
+        "label": "Show Rain in next hour &<br>WBGT (heat stress) alert icons",
+//        "description": "current and forecast high | low temperatures & condition icons replace battery value. Also shows alerts for rain in next hour, and current very high wet bulb globe temperatures",
+        "defaultValue": true
     },
     {
         "type": "text",
