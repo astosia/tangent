@@ -115,7 +115,7 @@ var applyTimezone = function(settings) {
     });
 };
 
-var NO_WEATHER = { icon: 0, temp: "--", tempFore: "--|--", rainSoon: 0, wbgtLevel: 0 };
+var NO_WEATHER = { icon: 0, temp: "--", tempFore: "--|--", rainSoon: 0, rainAmount: 0, wbgtLevel: 0 };
 
 // Copies a weather.get() result onto `msg` under the message keys the watch expects.
 var weatherToMessage = function(result, msg) {
@@ -123,6 +123,7 @@ var weatherToMessage = function(result, msg) {
     msg[messageKeys.WeatherTemp] = result.temp;
     msg[messageKeys.TempFore] = result.tempFore;
     msg[messageKeys.RainSoon] = result.rainSoon;
+    msg[messageKeys.RainAmount] = result.rainAmount;
     msg[messageKeys.WBGTLevel] = result.wbgtLevel;
     return msg;
 };

@@ -5,6 +5,7 @@ dist.zip
 
 # Ignore waf lock file
 .lock-waf*
+.npmrc
 
 # Ignore installed node modules
 node_modules/

@@ -144,20 +144,24 @@ static char* wind_direction[] = {
      "\U0000F04B", //'Variable': 16
 };
 
+// Index is round(next-hour rainfall in mm), clamped to 0-10 (see rainAmountIndex() in
+// weather.js): 0 = under 0.5mm, 1 = 0.5-1.5mm, ..., 10 = 9.5mm or more.
 static char* rain_amount[] = {
-    "\U0000F0F6",//  <1mm,
-    "\U0000F0F7", // 1-2mm,
-     "\U0000F0F8",//  2-3mm,
-     "\U0000F0F9",// 3-4
-     "\U0000F0FA",// 4-5
-     "\U0000F0FB",// 5-6,
-     "\U0000F0FC",// 6-7
-     "\U0000F0FD",// 7-8
-     "\U0000F0FE",// 8-9
-     "\U0000F0FF",// 9-10
-     "\U0000F100",// 10+
-     "\U0000F084", //'unknown amount'
+    "\U0000F0F6",// 0: < 0.5mm, umbrella with "0"
+    "\U0000F0F7",// 1: 0.5-1.5mm, umbrella with "1"
+    "\U0000F0F8",// 2: 1.5-2.5mm, umbrella with "2"
+    "\U0000F0F9",// 3: 2.5-3.5mm, umbrella with "3"
+    "\U0000F0FA",// 4: 3.5-4.5mm, umbrella with "4"
+    "\U0000F0FB",// 5: 4.5-5.5mm, umbrella with "5"
+    "\U0000F0FC",// 6: 5.5-6.5mm, umbrella with "6"
+    "\U0000F0FD",// 7: 6.5-7.5mm, umbrella with "7"
+    "\U0000F0FE",// 8: 7.5-8.5mm, umbrella with "8"
+    "\U0000F0FF",// 9: 8.5-9.5mm, umbrella with "9"
+    "\U0000F100",// 10: >= 9.5mm, umbrella with "10"
+    "\U0000F084", //'unknown amount' (idx out of range), plain umbrella icon
 };
+
+
 
 static char* moon_phase[] ={
   "\U0000F095",//'wi-moon-new':0,

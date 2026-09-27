@@ -72,4 +72,7 @@ typedef struct ClaySettings {
   bool ShowForecast;
   bool ShowCurrent;
   bool ShowAlert;
+  int RainAmount; // 0-10, index into the rain-amount icon set (see Weather.c)
+  bool HourTicksOnly;
+  bool ShakeToRefreshWeather;
 } __attribute__((__packed__)) ClaySettings;

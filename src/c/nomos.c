@@ -81,10 +81,24 @@ static int s_countdown = 30;
 static time_t s_last_weather_fetch = 0;
 // Stored separately from ClaySettings/SETTINGS_KEY since it's local
 #define WEATHER_FETCH_EPOCH_KEY 248
-#define WEATHER_STALE_ICON "\U0000F03E"
-static bool s_launch_weather_delay = false;
-static AppTimer *s_launch_weather_timer = NULL;
-#define LAUNCH_WEATHER_DELAY_MS 1000
+#define WEATHER_STALE_ICON "\U0000F03E"       // shown when the data is old and no refresh is in flight
+#define WEATHER_REFRESHING_ICON "\U0000F04C"  // shown while a refresh is in flight
+// s_weather_refreshing is true (and WEATHER_REFRESHING_ICON shows) while EITHER of these is true,
+// so a refresh always shows for at least the minimum time even if the reply is instant, and never
+// shows for longer than the timeout even if the phone never replies at all.
+static bool s_weather_refreshing = false;
+static bool s_weather_min_display_active = false;   // minimum display time hasn't elapsed yet
+static bool s_weather_awaiting_response = false;    // no reply yet, and haven't given up yet
+static AppTimer *s_weather_min_display_timer = NULL;
+static AppTimer *s_weather_response_timeout_timer = NULL;
+#define WEATHER_REFRESH_MIN_DISPLAY_MS 1000  // always show "refreshing" for at least this long
+#define WEATHER_REFRESH_TIMEOUT_MS 15000     // give up waiting for a reply after this long
+static AppTimer *s_weather_reconnect_timer = NULL;
+#define WEATHER_RECONNECT_DELAY_MS 3000      // give the phone's companion app time to come back
+                                              // up before asking it for weather (see comment on
+                                              // bluetooth_connection_handler below)
+static time_t s_last_manual_weather_request = 0;
+#define WEATHER_MANUAL_REFRESH_COOLDOWN_SEC 60  // don't let repeated shakes spam the phone/API
 #endif
 static ClaySettings settings;
 
@@ -425,7 +439,8 @@ static void bg_update_proc(Layer *layer, GContext *ctx);
 #ifdef HAS_WEATHER
 static void weather_update_proc(Layer *layer, GContext *ctx);
 static void prv_request_weather_update(void);
-static void prv_launch_weather_delay_callback(void *data);
+static void prv_weather_min_display_callback(void *data);
+static void prv_weather_refresh_timeout_callback(void *data);
 #endif
 static void update_logo_date_battery_fctx_layer(Layer *layer, GContext * ctx);
 static void layer_update_proc_battery_line(Layer *layer, GContext * ctx);
@@ -499,6 +514,7 @@ static void prv_default_settings(void) {
   settings.BackSize = 4;
   settings.BackLen = config.analogue_hand_b;
   settings.Roman = false;
+  settings.HourTicksOnly = false;
   settings.SubDialChoice = 0;
   settings.tz_offset = 0;
   settings.showremoteAMPM = true;
@@ -511,8 +527,10 @@ static void prv_default_settings(void) {
   settings.UseWeather = false;
   settings.UpSlider = 30;
   settings.RainSoon = false;
+  settings.RainAmount = 0;
   settings.WBGTLevel = 0;
   settings.RefreshWeatherOnLaunch = false;
+  settings.ShakeToRefreshWeather = true;
   settings.ShowForecast = true;
   settings.ShowCurrent = true;
   settings.ShowAlert = true;
@@ -618,6 +636,18 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
        return;
      }
 
+  #ifdef HAS_WEATHER
+  // Enables manual "refresh weather now" - useful right after regaining signal, without needing to open settings or wait for the next scheduled refresh. 
+  //Cooldown-limited (once per minute) so arm movement can't repeatedly call the weather API.
+  if (settings.UseWeather && settings.ShakeToRefreshWeather) {
+    time_t now = time(NULL);
+    if (s_last_manual_weather_request == 0 || (now - s_last_manual_weather_request) >= WEATHER_MANUAL_REFRESH_COOLDOWN_SEC) {
+      s_last_manual_weather_request = now;
+      prv_request_weather_update();
+    }
+  }
+  #endif
+
   // Only handle if the seconds hand setting is enabled and not already always on
   if ((settings.SubDialChoice == 2 || settings.SubDialChoice ==6)){ // && settings.SecondsVisibleTime < 135) {
       // If a timer is already running, cancel it
@@ -639,6 +669,22 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
       layer_mark_dirty(s_canvas_comp_bg);
       layer_mark_dirty(s_canvas_month_hand);
       layer_mark_dirty(s_canvas_second_hand);
+  }
+}
+
+// accel_tap_service only supports one subscriber at a time, and two features use it (seconds-hand reveal-on-shake (SubDialChoice 2/6) and shake-to-refresh-weather)
+// Call this after processing a settings change (or at startup) to (re)subscribe or unsubscribe based on whichever of those currently apply, rather than each feature managing the
+// single shared subscription on its own and potentially getting the way of what the other one needs.
+static void prv_update_accel_tap_subscription(void) {
+  bool need_accel_tap = (settings.SubDialChoice == 2 || settings.SubDialChoice == 6);
+  #ifdef HAS_WEATHER
+  need_accel_tap = need_accel_tap || (settings.UseWeather && settings.ShakeToRefreshWeather);
+  #endif
+
+  if (need_accel_tap) {
+    accel_tap_service_subscribe(accel_tap_handler);
+  } else {
+    accel_tap_service_unsubscribe();
   }
 }
 
@@ -674,19 +720,73 @@ static void bluetooth_vibe_icon (bool connected) {
 }
 
 #ifdef HAS_WEATHER
-static void prv_launch_weather_delay_callback(void *data) {
-  s_launch_weather_timer = NULL;
-  s_launch_weather_delay = false;
-  layer_mark_dirty(s_canvas_weather);
+// Recomputes s_weather_refreshing from the two flags above and redraws if it changed.
+static void prv_update_weather_refreshing_state(void) {
+  bool refreshing = s_weather_min_display_active || s_weather_awaiting_response;
+  if (refreshing != s_weather_refreshing) {
+    s_weather_refreshing = refreshing;
+    // s_canvas_weather doesn't exist the moment the window is first loading: this guards against that
+    if (s_canvas_weather) {
+      layer_mark_dirty(s_canvas_weather);
+    }
+  }
 }
 
+// Fires WEATHER_REFRESH_MIN_DISPLAY_MS after a request goes out. If the reply already arrived, this is what switches the icon off "refreshing", or until the timeout below gives up.
+static void prv_weather_min_display_callback(void *data) {
+  s_weather_min_display_timer = NULL;
+  s_weather_min_display_active = false;
+  prv_update_weather_refreshing_state();
+}
+
+// Safety net only: normally s_weather_awaiting_response is cleared as soon as the phone's response arrives (see the IconNow in prv_inbox_received_handler). 
+// This stops the "refreshing" icon from being shown forever if the phone never answers at all.
+static void prv_weather_refresh_timeout_callback(void *data) {
+  s_weather_response_timeout_timer = NULL;
+  s_weather_awaiting_response = false;
+  prv_update_weather_refreshing_state();
+}
+
+// Asks the phone for a fresh weather reading
 static void prv_request_weather_update(void) {
+  s_weather_min_display_active = true;
+  s_weather_awaiting_response = true;
+  prv_update_weather_refreshing_state();
+
+  if (s_weather_min_display_timer) { app_timer_cancel(s_weather_min_display_timer); }
+  s_weather_min_display_timer = app_timer_register(WEATHER_REFRESH_MIN_DISPLAY_MS, prv_weather_min_display_callback, NULL);
+
+  if (s_weather_response_timeout_timer) { app_timer_cancel(s_weather_response_timeout_timer); }
+  s_weather_response_timeout_timer = app_timer_register(WEATHER_REFRESH_TIMEOUT_MS, prv_weather_refresh_timeout_callback, NULL);
+
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
   dict_write_uint8(iter, 0, 0);
   app_message_outbox_send();
 }
 #endif
+
+#ifdef HAS_WEATHER
+// The watch was seeing the Bluetooth link come back before the phone's companion app was ready, asking for weather straight away got lost.  This forces it to wait for 3 seconds before requesting a weather refresh
+static void prv_weather_reconnect_delay_callback(void *data) {
+  s_weather_reconnect_timer = NULL;
+  prv_request_weather_update();
+}
+#endif
+
+// Called whenever the phone's Bluetooth connection to the watch changes. 
+// (This is a live reconnect, not app launch, so it's independent of "Refresh weather on launch".  That setting still controls whether launching the watchface itself triggers a fetch.)
+static void bluetooth_connection_handler(bool connected) {
+  bluetooth_vibe_icon(connected);
+
+  #ifdef HAS_WEATHER
+  if (connected && settings.UseWeather) {
+    s_countdown = settings.UpSlider > 0 ? settings.UpSlider : 1;
+    if (s_weather_reconnect_timer) { app_timer_cancel(s_weather_reconnect_timer); }
+    s_weather_reconnect_timer = app_timer_register(WEATHER_RECONNECT_DELAY_MS, prv_weather_reconnect_delay_callback, NULL);
+  }
+  #endif
+}
 
 
 // Load settings from persistent storage
@@ -848,6 +948,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *subdial_t = dict_find(iter, MESSAGE_KEY_SubDialColor);
   Tuple *bwsubdial_t = dict_find(iter, MESSAGE_KEY_BWSubDialColor);
   Tuple *roman_t = dict_find(iter, MESSAGE_KEY_Roman);
+  Tuple *hourticksonly_t = dict_find(iter, MESSAGE_KEY_HourTicksOnly);
 
   Tuple *subdialchoice_t = dict_find(iter,MESSAGE_KEY_SubDialChoice);
   Tuple *tzoffset_t = dict_find(iter, MESSAGE_KEY_TZ_OFFSET);
@@ -869,8 +970,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple * iconnow_tuple = dict_find(iter, MESSAGE_KEY_IconNow);
   Tuple * wforetemp_t = dict_find(iter, MESSAGE_KEY_TempFore);
   Tuple * rainsoon_t = dict_find(iter, MESSAGE_KEY_RainSoon);
+  Tuple * rainamount_t = dict_find(iter, MESSAGE_KEY_RainAmount);
   Tuple * wbgtlevel_t = dict_find(iter, MESSAGE_KEY_WBGTLevel);
   Tuple * refreshonlaunch_t = dict_find(iter, MESSAGE_KEY_RefreshWeatherOnLaunch);
+  Tuple * shaketorefresh_t = dict_find(iter, MESSAGE_KEY_ShakeToRefreshWeather);
   Tuple *show_btqt_icons_t = dict_find(iter, MESSAGE_KEY_ShowBTQTIcons);
 
   if (show_btqt_icons_t) {
@@ -903,6 +1006,11 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     settings_changed = true;
   }
 
+  if (shaketorefresh_t) {
+    settings.ShakeToRefreshWeather = shaketorefresh_t->value->int32 != 0;
+    settings_changed = true;
+  }
+
 
   if (frequpdate){
     settings.UpSlider = (int) frequpdate -> value -> int32;
@@ -920,6 +1028,9 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
       snprintf(settings.iconnowstring,sizeof(settings.iconnowstring),"%s",safe_weather_condition((int)iconnow_tuple->value->int32));
       s_last_weather_fetch = time(NULL);
       persist_write_int(WEATHER_FETCH_EPOCH_KEY, (int32_t) s_last_weather_fetch);
+      if (s_weather_response_timeout_timer) { app_timer_cancel(s_weather_response_timeout_timer); s_weather_response_timeout_timer = NULL; }
+      s_weather_awaiting_response = false;
+      prv_update_weather_refreshing_state();
      settings_changed = true;
   }
 
@@ -930,6 +1041,11 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   if (rainsoon_t){
     settings.RainSoon = rainsoon_t->value->int32 != 0;
+     settings_changed = true;
+  }
+
+  if (rainamount_t){
+    settings.RainAmount = (int)rainamount_t->value->int32;
      settings_changed = true;
   }
 
@@ -983,6 +1099,11 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
    if (roman_t) {
     settings.Roman = roman_t->value->int32 == 1;
+    settings_changed = true;
+  }
+
+  if (hourticksonly_t) {
+    settings.HourTicksOnly = hourticksonly_t->value->int32 != 0;
     layer_mark_dirty(s_canvas_layer);
     layer_mark_dirty(s_date_battery_logo_layer);
   }
@@ -1274,6 +1395,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     mark_all_layers_dirty(theme_settings_changed);
   }
 
+  prv_update_accel_tap_subscription();
   prv_save_settings();
 
 }
@@ -1883,9 +2005,11 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   GRect SixRect = GRect(1,bounds.size.h-28-11,bounds.size.w, 28);
   graphics_context_set_text_color(ctx, settings.BWHourDigitsColor);
 
-  graphics_draw_text(ctx, settings.Roman ? "XII" : "12", FontHour, TwelveRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-  if(!settings.EnableDate){
-    graphics_draw_text(ctx, settings.Roman ? "VI" : "6", FontHour, SixRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+  if (!settings.HourTicksOnly) {
+    graphics_draw_text(ctx, settings.Roman ? "XII" : "12", FontHour, TwelveRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    if(!settings.EnableDate){
+      graphics_draw_text(ctx, settings.Roman ? "VI" : "6", FontHour, SixRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+    }
   }
 
 
@@ -1994,68 +2118,70 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   #endif
 
   
-  if(!settings.EnableDate){
-     for (int i = 1; i < 13; i++) {
-      if (i % 2 == 0){
-        fctx_begin_fill(&fctx);
-        fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
-        fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
-        char digit_string[6];
-        int32_t digit_angle = i * 30 ;
-        int32_t digit_angle_trig = (TRIG_MAX_ANGLE * digit_angle) / 360;
-        int32_t digit_rotation; // = digit_angle_trig; // if you want rotation to match position angle
-
-        if(i < 4 || i > 9){
-              digit_rotation = digit_angle_trig;//  TRIG_MAX_ANGLE / 2;
-            }
-            else{
-              digit_rotation = digit_angle_trig + TRIG_MAX_ANGLE / 2;
-            }
-
-        fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
-        
-        get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
-        FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
-        FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
-        fctx_set_rotation(&fctx, digit_rotation);
-        fctx_set_offset(&fctx, p);
-        fctx_draw_string(&fctx, digit_string, FCTX_Font, GTextAlignmentCenter, FTextAnchorMiddle);
-        fctx_end_fill(&fctx);
-      
-      }
-     }
-    }
-    else{
+  if (!settings.HourTicksOnly) {
+    if(!settings.EnableDate){
        for (int i = 1; i < 13; i++) {
-      if (i % 2 == 0 && i != 6){
-        fctx_begin_fill(&fctx);
-        fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
-        fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
-        char digit_string[6];
-        int32_t digit_angle = i * 30 ;
-        int32_t digit_angle_trig = (TRIG_MAX_ANGLE * digit_angle) / 360;
-        int32_t digit_rotation; // = digit_angle_trig; // if you want rotation to match position angle
+        if (i % 2 == 0){
+          fctx_begin_fill(&fctx);
+          fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
+          fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
+          char digit_string[6];
+          int32_t digit_angle = i * 30 ;
+          int32_t digit_angle_trig = (TRIG_MAX_ANGLE * digit_angle) / 360;
+          int32_t digit_rotation; // = digit_angle_trig; // if you want rotation to match position angle
 
-        if(i < 4 || i > 9){
-              digit_rotation = digit_angle_trig;//  TRIG_MAX_ANGLE / 2;
-            }
-            else{
-              digit_rotation = digit_angle_trig + TRIG_MAX_ANGLE / 2;
-            }
+          if(i < 4 || i > 9){
+                digit_rotation = digit_angle_trig;//  TRIG_MAX_ANGLE / 2;
+              }
+              else{
+                digit_rotation = digit_angle_trig + TRIG_MAX_ANGLE / 2;
+              }
 
-        fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
+          fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
         
-        get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
-        FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
-        FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
-        fctx_set_rotation(&fctx, digit_rotation);
-        fctx_set_offset(&fctx, p);
-        fctx_draw_string(&fctx, digit_string, FCTX_Font, GTextAlignmentCenter, FTextAnchorMiddle);
-        fctx_end_fill(&fctx);
+          get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
+          FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
+          FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
+          fctx_set_rotation(&fctx, digit_rotation);
+          fctx_set_offset(&fctx, p);
+          fctx_draw_string(&fctx, digit_string, FCTX_Font, GTextAlignmentCenter, FTextAnchorMiddle);
+          fctx_end_fill(&fctx);
       
+        }
+       }
       }
-     }
-    }
+      else{
+         for (int i = 1; i < 13; i++) {
+        if (i % 2 == 0 && i != 6){
+          fctx_begin_fill(&fctx);
+          fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
+          fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
+          char digit_string[6];
+          int32_t digit_angle = i * 30 ;
+          int32_t digit_angle_trig = (TRIG_MAX_ANGLE * digit_angle) / 360;
+          int32_t digit_rotation; // = digit_angle_trig; // if you want rotation to match position angle
+
+          if(i < 4 || i > 9){
+                digit_rotation = digit_angle_trig;//  TRIG_MAX_ANGLE / 2;
+              }
+              else{
+                digit_rotation = digit_angle_trig + TRIG_MAX_ANGLE / 2;
+              }
+
+          fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
+        
+          get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
+          FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
+          FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
+          fctx_set_rotation(&fctx, digit_rotation);
+          fctx_set_offset(&fctx, p);
+          fctx_draw_string(&fctx, digit_string, FCTX_Font, GTextAlignmentCenter, FTextAnchorMiddle);
+          fctx_end_fill(&fctx);
+      
+        }
+       }
+      }
+  }
 
   //draw weekday and date text
   if (settings.EnableDate ) {
@@ -2543,7 +2669,8 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
     if (settings.ShowCurrent) {
       char CondToDraw[4];
     snprintf(CondToDraw, sizeof(CondToDraw), "%s",
-             (s_launch_weather_delay || weatherStale) ? WEATHER_STALE_ICON : settings.iconnowstring);
+             s_weather_refreshing ? WEATHER_REFRESHING_ICON :
+             weatherStale ? WEATHER_STALE_ICON : settings.iconnowstring);
 
     GRect IconNowRect = settings.EnableBatteryLine ? config.IconNowRect[0] : config.IconNowRect2[0];
     graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
@@ -2553,7 +2680,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
     if (settings.RainSoon && settings.ShowAlert) {
 
       GRect RainIconRect = config.RainIconRect[0];
-      graphics_draw_text(ctx, "\U0000F084", FontWeatherIcons, RainIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+      graphics_draw_text(ctx, safe_rain_amount(settings.RainAmount), FontWeatherIcons, RainIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
       
     }
 
@@ -2673,13 +2800,16 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
         int angle = i * 30 - 90;
         draw_major_tick(ctx, angle, config.majorticklength, PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.MajorTickColor), PBL_IF_BW_ELSE(settings.BWMajorTickColor, settings.MajorTickColor));
         
+        //don't draw inner ticks where digits are present.  Don't draw an innner tick at 6 o'clock when digits are off but date is on
+        bool at_date_position = (i == 6 && settings.EnableDate);
         #ifdef PBL_PLATFORM_APLITE
-          if (i % 6 == 0) continue;
-          draw_major_tick_inner_set(ctx, angle, config.majorticklengthinner* bounds.size.h/full_bounds.size.h, PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.MajorTickColor), PBL_IF_BW_ELSE(settings.BWMajorTickColor, settings.MajorTickColor));
+          // Aplite only ever draws "12" (i==0), and "6" (i==6) only when the date is off.
+          bool at_digit_position = (i == 0) || (i == 6 && !settings.EnableDate);
         #else
-          if (i % 2 == 0) continue;
-          draw_major_tick_inner_set(ctx, angle, config.majorticklengthinner* bounds.size.h/full_bounds.size.h, PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.MajorTickColor), PBL_IF_BW_ELSE(settings.BWMajorTickColor, settings.MajorTickColor));
+          bool at_digit_position = (i % 2 == 0);
         #endif
+        if (at_date_position || (at_digit_position && !settings.HourTicksOnly)) continue;
+          draw_major_tick_inner_set(ctx, angle, config.majorticklengthinner* bounds.size.h/full_bounds.size.h, PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.MajorTickColor), PBL_IF_BW_ELSE(settings.BWMajorTickColor, settings.MajorTickColor));
       }
     }
 
@@ -2694,14 +2824,6 @@ static void prv_window_load(Window *window) {
 
   #ifdef HAS_WEATHER
   s_countdown = settings.UpSlider;
-  
-  if (settings.UseWeather && settings.RefreshWeatherOnLaunch) {
-    s_launch_weather_delay = true;
-    if (s_launch_weather_timer) { app_timer_cancel(s_launch_weather_timer); }
-    s_launch_weather_timer = app_timer_register(LAUNCH_WEATHER_DELAY_MS, prv_launch_weather_delay_callback, NULL);
-    prv_request_weather_update();
-  }
-
   #endif
 
   time_t temp = time(NULL);
@@ -2734,7 +2856,7 @@ static void prv_window_load(Window *window) {
     #endif
   // Subscribe to the connection service to get Bluetooth status updates.
   connection_service_subscribe((ConnectionHandlers){
-    .pebble_app_connection_handler = bluetooth_vibe_icon
+    .pebble_app_connection_handler = bluetooth_connection_handler
   });
 
 
@@ -2811,12 +2933,27 @@ static void prv_window_load(Window *window) {
   layer_set_update_proc(s_canvas_month_hand, layer_update_proc_month_hand);
   layer_set_update_proc(s_canvas_tz, layer_update_proc_tz);
 
+  //refresh weather on launch/relaunch
+  #ifdef HAS_WEATHER
+  if (settings.UseWeather && settings.RefreshWeatherOnLaunch) {
+    prv_request_weather_update();
+  }
+  #endif
+
+  prv_update_accel_tap_subscription();
+
 }
 
 
 static void prv_window_unload(Window *window) {
   #ifdef BACKLIGHTON
     light_enable(false);
+  #endif
+
+  #ifdef HAS_WEATHER
+  // Don't let a pending reconnect-triggered request fire later, into whatever window happens to
+  // be loaded next.
+  if (s_weather_reconnect_timer) { app_timer_cancel(s_weather_reconnect_timer); s_weather_reconnect_timer = NULL; }
   #endif
 
   accel_tap_service_unsubscribe();
@@ -2833,6 +2970,7 @@ static void prv_window_unload(Window *window) {
   layer_destroy(s_canvas_battery);
   #ifdef HAS_WEATHER
   layer_destroy(s_canvas_weather);
+  s_canvas_weather = NULL;
   #endif
   layer_destroy(s_canvas_bt_icon);
   layer_destroy(s_canvas_qt_icon);

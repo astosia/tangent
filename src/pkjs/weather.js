@@ -309,6 +309,16 @@ function toDisplayTemp(tempC, useFahrenheit) {
     return Math.round(useFahrenheit ? (tempC * 9 / 5) + 32 : tempC);
 }
 
+// mm of rain expected in the next hour -> an index into the watch's 11-icon rain-amount
+// set (nomos.c's rain_amount[], glyphs U+F0F6..U+F100): 0 = under 0.5mm, 1 = 0.5-1.5mm,
+// ..., 10 = 9.5mm or more. Round-half-up matches those boundaries directly.
+function rainAmountIndex(mm) {
+    var n = Math.round(mm);
+    if (isNaN(n) || n < 0) return 0;
+    if (n > 10) return 10;
+    return n;
+}
+
 // ---- Networking helper -------------------------------------------------
 
 function xhrGetJSON(url, timeoutMs) {
@@ -379,7 +389,7 @@ function fetchOpenMeteo(lat, lon, useFahrenheit) {
         '&current=temperature_2m,relative_humidity_2m,weather_code,is_day,' +
             'wind_speed_10m,shortwave_radiation,direct_radiation,diffuse_radiation,surface_pressure' +
         '&daily=temperature_2m_max,temperature_2m_min' +
-        '&hourly=precipitation_probability' +
+        '&hourly=precipitation_probability,precipitation' +
         '&forecast_days=2' +
         '&timezone=auto' +
         '&timeformat=unixtime';
@@ -411,15 +421,17 @@ function fetchOpenMeteo(lat, lon, useFahrenheit) {
         // index of the next hour is just "hours since the first entry" + 1.
         var hourly = json.hourly || {};
         var probs = hourly.precipitation_probability || [];
+        var amounts = hourly.precipitation || [];
         var firstHour = hourly.time && hourly.time[0];
         var nextHourIdx = (typeof firstHour === 'number')
             ? Math.floor((Date.now() / 1000 - firstHour) / 3600) + 1
             : new Date().getHours() + 1;
         var rainChance = (typeof probs[nextHourIdx] === 'number') ? probs[nextHourIdx] : 0;
+        var rainAmountMm = (typeof amounts[nextHourIdx] === 'number') ? amounts[nextHourIdx] : 0;
 
         return {
             icon: icon, temp: temp, high: high, low: low,
-            rainChance: rainChance, wbgtLevel: wbgtLevel
+            rainChance: rainChance, rainAmountMm: rainAmountMm, wbgtLevel: wbgtLevel
         };
     });
 }
@@ -450,9 +462,11 @@ function fetchOpenWeatherMap(lat, lon, apiKey, useFahrenheit) {
         var low = Math.round(json.daily[0].temp.min);
 
         // hourly[0] is the current hour, hourly[1] is the next hour
-        // `pop` is probability of precipitation as a 0-1 fraction, so *100 to get same value as Open-Meteo
+        // `pop` is probability of precipitation as a 0-1 fraction, so *100 to get same value as Open-Meteo.
+        // `rain['1h']` is only present in the response when rain is actually forecast for that hour.
         var hourly = json.hourly || [];
         var rainChance = hourly[1] ? Math.round((hourly[1].pop || 0) * 100) : 0;
+        var rainAmountMm = (hourly[1] && hourly[1].rain && hourly[1].rain['1h']) || 0;
 
         // WBGT needs Celsius/m-s regardless of the display unit, and 'units'
         // only affects temp/wind fields, not humidity - json.current.humidity
@@ -479,7 +493,7 @@ function fetchOpenWeatherMap(lat, lon, apiKey, useFahrenheit) {
 
         return {
             icon: icon, temp: temp, high: high, low: low,
-            rainChance: rainChance, wbgtLevel: wbgtLevel
+            rainChance: rainChance, rainAmountMm: rainAmountMm, wbgtLevel: wbgtLevel
         };
     });
 }
@@ -487,7 +501,8 @@ function fetchOpenWeatherMap(lat, lon, apiKey, useFahrenheit) {
 // ---- Public API ------------------------------------------------------
 
 // get(settings) -> Promise resolving to
-// { icon: <number>, temp: "<string>", tempFore: "<string>", rainSoon: <0|1>, wbgtLevel: <0-3> }.
+// { icon: <number>, temp: "<string>", tempFore: "<string>", rainSoon: <0|1>, rainAmount: <0-10>, wbgtLevel: <0-3> }.
+// rainAmount indexes the watch's rain-amount icon set and is only meaningful while rainSoon is 1.
 //
 //   UseWeather   (bool)   - master on/off switch
 //   WeatherProv  ('ds' | 'owm') - 'ds' = Open-Meteo, 'owm' = OpenWeatherMap
@@ -499,8 +514,8 @@ var getWeather = function(settings) {
     var useWeather = settings && settings.UseWeather;
 
     if (!useWeather) {
-        console.log("Weather disabled - icon=0 temp=-- tempFore=--|-- rainSoon=0 wbgtLevel=0");
-        return Promise.resolve({ icon: 0, temp: '--', tempFore: '--|--', rainSoon: 0, wbgtLevel: 0 });
+        console.log("Weather disabled - icon=0 temp=-- tempFore=--|-- rainSoon=0 rainAmount=0 wbgtLevel=0");
+        return Promise.resolve({ icon: 0, temp: '--', tempFore: '--|--', rainSoon: 0, rainAmount: 0, wbgtLevel: 0 });
     }
 
     var useFahrenheit = !!settings.WeatherUnit;
@@ -519,16 +534,19 @@ var getWeather = function(settings) {
         return fetchOpenMeteo(loc.lat, loc.lon, useFahrenheit);
     }).then(function(result) {
         var rainSoon = result.rainChance >= RAIN_THRESHOLD_PERCENT ? 1 : 0;
+        var rainAmount = rainAmountIndex(result.rainAmountMm || 0);
 
         console.log("Weather fetched (" + provider + ") - icon=" + result.icon +
             " temp=" + result.temp + " high=" + result.high + " low=" + result.low +
             " rainChance=" + result.rainChance + "% rainSoon=" + rainSoon +
+            " rainAmountMm=" + result.rainAmountMm + " rainAmount=" + rainAmount +
             " wbgtLevel=" + result.wbgtLevel);
         return {
             icon: result.icon,
             temp: String(result.temp),
             tempFore: String(result.high) + ' | ' + String(result.low),
             rainSoon: rainSoon,
+            rainAmount: rainAmount,
             wbgtLevel: result.wbgtLevel
         };
     });

@@ -579,7 +579,8 @@ module.exports = function(minified) {
     // "Show Weather" is on. Lat/Long are left out on purpose: the location search shows and
     // hides those itself.
     var WEATHER_IDS = ["WEATHER_HEADING", "WATCH_PREVIEW_4", "WEATHER_SAVE"];
-    var WEATHER_KEYS = ["WeatherProv", "LocationQuery", "APIKEY_User", "UpSlider", "RefreshWeatherOnLaunch", "WeatherUnit", "ShowCurrent", "ShowForecast", "ShowAlert"];
+    var WEATHER_KEYS = ["WeatherProv", "LocationQuery", "APIKEY_User", "UpSlider", "RefreshWeatherOnLaunch", "WeatherUnit",
+                          "ShowCurrent", "ShowForecast", "ShowAlert", "ShakeToRefreshWeather"];
 
     var updateWeatherSectionVisibility = function() {
         var useWeather = config.getItemByMessageKey("UseWeather");
@@ -608,6 +609,14 @@ module.exports = function(minified) {
         DATE_OPTION_KEYS.forEach(function(key) {
             setVisible(config.getItemByMessageKey(key), isDateOn);
         });
+    };
+
+    // "Numbers or Roman Numerals" is moot once "Tick Marks Only" replaces both with plain ticks
+    var updateRomanVisibility = function() {
+        var ticksOnly = config.getItemByMessageKey("HourTicksOnly");
+        if (!ticksOnly) return;
+
+        setVisible(config.getItemByMessageKey("Roman"), !ticksOnly.get());
     };
 
     // The "Custom Colours" group (heading, preview and every colour picker) only shows when the
@@ -728,7 +737,7 @@ module.exports = function(minified) {
     // ---- Fonts: subsets of Tangent-Regular.ttf and WeatherIcons-RegularMod.ttf, plus the
     // two dripicons glyphs used for the Bluetooth / Quiet Time icons ----
     var TANGENT_WOFF2_B64 = "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";
-    var WEATHER_ICONS_WOFF2_B64 = "d09GMgABAAAAAAUAAAwAAAAAChQAAASyAAEZmQAAAAAAAAAAAAAAAAAAAAAAAAAAGhYGYABEEQgKjziNMgE2AiQDGAsOAAQgBQYHIBsrCCDG58Hz/ZvWSfGstI8e1c1tJyD5fCfdXGjy9wA+J+0AdF/q/F9OuyhcC9u2SAJPZO2BCyzrBbYtWvatw3tRujngMLoXSMRnAabW2xhbtQyNKFqtNS8GAoAKgrgIBAhIy2J5R2Lt1S+RFktqAbgqW1SLqgkAKQg9Yw9zL7QNqAMfZHf/vwsoLonqABCgQAo+OGUxgAjBSiSSBIURBRTmgYA68EXgQzDYcO9Wan/VLtdGTxYiQBjkoAUAyCCVdDogugiIHRDskuBIJEQI5FBKJBptaAilVmlD1BPiVDyaGaMt1jituiEOp5ZoF41WK1VyNmc/RVkamQaS5JomKQjm/d21YDIH8KZ9S+xlS5ZxL04Xl61jTmLvPiUKggDm+ZU+n5kRVvkJ1gcpfhHbjIBGgGngmoglhMKQHYvmSTGZDf2qTfkUfOPSHpI7f9+H04zY7je/nEGwZyjLKUB4LAhGQRAiAeYkycX5yIs8fzNiYE+2zyQDwzhJck8ET3Kmfd9tcrk9wxHVl1nOgW91irK02X8gLk7OD7AeLanWvgEXD2JDxNF9uzaZ/RRlMTb7zcIOX/4LFfdowFnfh57mrGuxPx0kgBnAkyzJgQVjo1jKYvYviIoyJm7ADn1bpG0hI1jyG5iaTCwhZc9zZyFhwffhlyzMdy1+dJX1m5Vs/5iEleyZl+SKh7JA1aSzE8rNWyMomIgMfg8x6KHJaNTlkJzdh6E9kGG5I6TGFAZ/t4Oz1gmxft+xjDu01CChhSOMhadoi9exUK8roPVeh6NtcbtiDtLXtAVB6cccXodel6bTL2qtnPa4zQYkmJm1A61Wc+1MuzUYtObCH2YLHrR579yrvHfP67532+u5ezv0gl/XQacv0fH6ToZOesi73aGN3Y30HbqtoW2GMIievzBDX+NxeLq7Pn1yOBYfzpzv8B5L13WiM10ex7X0jJ8DnQ0eV/otenz3cfQtGqJg5Lhngz/L2pIUVZB6NTHpVmqBV6bte/Wz1Vxln3bDh/nSV0BJJVxMKr671LJh9LTsdnmbcDc+I23OnFExYQqFSh4+dOLp14YTfYY5t/UZlnbjza5IRQyRGBuZ0Cdd2baXZmp/Y8ccsTh0bvzAYVPLNQklK1avEQVm6BceLpblNG7e/uj4lMpRyqOOVRe/7TtOJqNKDh6Z37lmQtK8v/9bdWbZoQXIjWoR7TiGG7E9VuvGL8d1m+29d9vtmTpt2oxJiIuOxGfURwpRY1f0WN5tw//2meZaq7V24BRMm5T3XypWy2sWp3com+3ZfG/rllnjOhmi2kZB/Z4c3+eA8EyQHSO7dzBgesOpVf6JDGG3b4pMj2W0yZgOv5Brt6GsZtmbmb3SmO9/ZNgfWEiGBAVgyZsa69q//lpr3cBE1/11fIOtoenj9wnrx47fMzD/we8xi0u7dCgv7dqhdHHMizpz/ujd6I7qVwj7AQX6jd0vAOcardaSHdUaQiqMUte4fl5qdtdY1/xhPXqP0Lb8TZGsAAA0/hm4DAAv7m/vD/xvU05SUAAUEA18jeLSf8WAcjEAKCeBALXLRO/QUXH37twDQm6FrDNHORPgyvATyJEEgCODGMqC36AKAAA=";
+    var WEATHER_ICONS_WOFF2_B64 = "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";
     var DRIPICONS_ICONS_WOFF2_B64 = "d09GMgABAAAAAAH4AAwAAAAAA3AAAAGsAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGhYGVgA8EQgKgjyCJQE2AiQDCAsIAAQgBQYHIBt8AgCOwziGvERM5UNTYjMien6szb5/oohVSyRChkTFs5Zk0jx3SPUy/v+vtft30VlMtImnFWUWMa/mcSRiUkmeoHFIdNVI22e246FNeGAz+4nudjfwLNYAoyBNu1umuQ1Rf4uwdUwwAUSUiBTyg65BNKwd7OdbM4HeoHSHAMgCAA7ay1uxi5v7JnZP90grhiCAQsOKJmA6ttFzUb9BBExaWN+IiuSfUKCBHnq4BvcAVgBN22pKv1HIlVX24yUfAc6kGCGwwiL4iiv+Vjz5iirOylN+1UYDclgj+Vi4ZQGeRJWqYj+QmXKqkpc4jh23TaKPwC378RYHaQZeRfZ8K6yyr+hjiaDLZhuNjB9e/bkf6bS/br/37a1tbUQVXm063ZH7baYdx4+O814V/b5/v28Tv7h7uzzu7st1vna+AHLbVZ5TGp89dj2SHzXadi7hJ8F5Xq2NvSMSe87thcVi844OIlFRif+R2930Ftnor7gE58At5J3ZeFrLJ3sHQ3i/2ftvcM+bOakUgF+ftVVvVDYUTMHAQIFQIcJO4YLQ88MUcItFQYuXKQionkYK";
 
     var PREVIEW_FONT_TEXT = "TangentPreview";
@@ -1143,6 +1152,7 @@ module.exports = function(minified) {
             // ForegroundShape only exists on rectangular watches: on = round, off = rectangular
             roundForeground: screen.round || getBoolVal("ForegroundShape", true),
             roman: getBoolVal("Roman", false),
+            hourTicksOnly: getBoolVal("HourTicksOnly", false),
             enableDate: getBoolVal("EnableDate", true),
             dateFormat: getVal("DateFormat", "0"),
             dateLanguage: getVal("DateLanguage", "auto"),
@@ -1320,9 +1330,14 @@ module.exports = function(minified) {
                 ends = majorTickEnds(tickAngle);
                 line(ends[0], ends[1], 3, c.majorTick);
 
-                // Aplite skips the inner ticks at 12 and 6 (it draws those digits instead);
-                // everything else draws them at the odd hours.
-                if (m.aplite ? (i % 6 === 0) : (i % 2 === 0)) continue;
+                // Digit-hour positions normally skip the inner tick; everything else draws
+                // them at the odd hours. With hourTicksOnly on those positions get the same
+                // double-tick treatment - except at 6 o'clock while the date is showing, since
+                // the date text sits there instead of a digit and an inner tick would run
+                // straight into it.
+                var atDatePosition = (i === 6 && m.enableDate);
+                var atDigitPosition = m.aplite ? (i === 0 || (i === 6 && !m.enableDate)) : (i % 2 === 0);
+                if (atDatePosition || (atDigitPosition && !m.hourTicksOnly)) continue;
                 ends = innerTickEnds(tickAngle);
                 line(ends[0], ends[1], 3, c.majorTick);
             }
@@ -1418,7 +1433,9 @@ module.exports = function(minified) {
         // ---- Digits, date and battery value (update_logo_date_battery_fctx_layer) ----
         var batteryLevel = 80;
 
-        if (m.aplite) {
+        if (m.hourTicksOnly) {
+            // Numbers/Roman numerals replaced by plain tick marks - handled above in the tick loop
+        } else if (m.aplite) {
             // Aplite only draws 12 (and 6 if the date is off), using a plain bitmap-style font
             boxText(m.roman ? "XII" : "12", 1 + idiv(w, 2), 6, 30, c.hourDigits);
             if (!m.enableDate) {
@@ -1469,7 +1486,12 @@ module.exports = function(minified) {
         // Sample alert state: a rain warning and the most severe WBGT (heat stress) level, so
         // both alert icons are visible together for the user to check their colours against.
         var SAMPLE_RAIN_SOON = true;
+        var SAMPLE_RAIN_AMOUNT = 6; // 0-10, index into RAIN_AMOUNT_GLYPHS (nomos.c's rain_amount[])
         var SAMPLE_WBGT_LEVEL = 3; // 0 = none, 1 = yellow, 2 = red, 3 = black
+
+        // U+F0F6 .. U+F100, one glyph per index 0-10 (< 0.5mm up to >= 9.5mm in the next hour)
+        var RAIN_AMOUNT_GLYPHS = ["\uF0F6", "\uF0F7", "\uF0F8", "\uF0F9", "\uF0FA", "\uF0FB",
+                                   "\uF0FC", "\uF0FD", "\uF0FE", "\uF0FF", "\uF100"];
 
         if (m.useWeather) {
             var weatherIcon = function(glyph, size, rect, align) {
@@ -1495,8 +1517,9 @@ module.exports = function(minified) {
 
             if (m.showAlert) {
                 if (SAMPLE_RAIN_SOON) {
-                    // "Rain in the next hour" glyph
-                    weatherIcon("\uF084", 20, g.RainIconRect, 'left');
+                    // Rain-amount glyph for the next hour, graded by how much rain is expected
+                    var rainGlyph = RAIN_AMOUNT_GLYPHS[SAMPLE_RAIN_AMOUNT] || "\uF084";
+                    weatherIcon(rainGlyph, 20, g.RainIconRect, 'left');
                 }
                 if (SAMPLE_WBGT_LEVEL > 0) {
                     // One glyph per severity: F0EC (yellow), F0ED (red), F0EE (black, level 3+)
@@ -1669,7 +1692,7 @@ module.exports = function(minified) {
         "PreviewPlatformOverride",
         "ForegroundShape", "Roman", "EnableDate", "DateFormat", "DateLanguage",
         "EnableBattery", "EnableBatteryLine", "ShowBTQTIcons", "showMajorTick", "showMinorTick",
-        "SubDialChoice", "showremoteAMPM", "UseWeather", "WeatherUnit", "ShowCurrent", "ShowForecast", "ShowAlert",
+        "SubDialChoice", "showremoteAMPM", "UseWeather", "WeatherUnit", "ShowCurrent", "ShowForecast", "ShowAlert", "HourTicksOnly",
         "MinuteHandThickness", "HourHandThickness", "MinuteCentreSize", "HourCentreSize",
         "InnerCentreSize", "BackSize", "BackLen",
         "ShadowOn", "ThemeSelect", "BackgroundColor1", "MinuteHandShadowColor", "MajorTickColor",
@@ -1734,6 +1757,12 @@ module.exports = function(minified) {
             enableDate.on('change', updateDateOptionsVisibility);
         }
         updateDateOptionsVisibility();
+
+        var ticksOnly = config.getItemByMessageKey("HourTicksOnly");
+        if (ticksOnly) {
+            ticksOnly.on('change', updateRomanVisibility);
+        }
+        updateRomanVisibility();
 
         THEME_SELECT_KEYS.forEach(function(key) {
             var themeItem = config.getItemByMessageKey(key);

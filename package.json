@@ -1,7 +1,7 @@
 {
   "name": "tangent",
   "author": "astosia",
-  "version": "4.1.0",
+  "version": "4.3.0",
   "keywords": [
     "pebble",
     "watchface",
@@ -108,7 +108,10 @@
       "ShowBTQTIcons",
       "ShowForecast",
       "ShowCurrent",
-      "ShowAlert"
+      "ShowAlert",
+      "RainAmount",
+      "HourTicksOnly",
+      "ShakeToRefreshWeather"
     ],
     "resources": {
       "media": [
@@ -189,7 +192,7 @@
         },
         {
           "file": "fonts/WeatherIcons-RegularMod.ttf",
-          "characterRegex": "[]",
+          "characterRegex": "[]",
           "name": "FONT_WEATHERICONS_20",
           "targetPlatforms": [
             "emery",

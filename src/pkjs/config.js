@@ -48,6 +48,13 @@ module.exports = [
       },
       {
         "type": "toggle",
+        "label": "Hour Ticks Only (no numbers)",
+        "messageKey": "HourTicksOnly",
+//        "description": "Replaces the numerals with plain tick marks at each hour",
+        "defaultValue": false
+      },
+      {
+        "type": "toggle",
         "label": "Dial Digits: Numbers or Roman Numerals",
         "messageKey": "Roman",
 //        "description": "Off = Numbers, On = Roman Numerals",
@@ -322,6 +329,12 @@ module.exports = [
         "defaultValue": ""
     },
     {
+        "type": "toggle",
+        "messageKey": "WeatherUnit",
+        "label": "Temperature in °C (off) or °F (on)",
+        "defaultValue": false
+    },
+    {
         "type": "select",
         "messageKey": "WeatherProv",
         "defaultValue": "ds",
@@ -384,15 +397,16 @@ module.exports = [
       {
         "type": "toggle",
         "messageKey": "RefreshWeatherOnLaunch",
-        "label": "Also Refresh Weather on Relaunch",
-        "description": "In addition to the update interval above, also request fresh weather every time watchface loads. Off = keeps last known reading between relaunches",
+        "label": "Refresh Weather on Relaunch",
+        "description": "In addition to the update frequency above, also request fresh weather every time watchface loads. Off = keeps last known reading between relaunches",
         "defaultValue": false
       },
       {
         "type": "toggle",
-        "messageKey": "WeatherUnit",
-        "label": "Temperature in °C (off) or °F (on)",
-        "defaultValue": false
+        "messageKey": "ShakeToRefreshWeather",
+        "label": "Shake to Refresh Weather",
+        "description": "Request fresh weather on demand<br>(limited to one attempt per minute)",
+        "defaultValue": true
       },
       {
         "type": "submit",
