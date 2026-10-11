@@ -1,7 +1,7 @@
 #pragma once
 #include <pebble.h>
 
-#define SETTINGS_KEY 148
+#define SETTINGS_KEY 150 // bumped: added BatteryWeatherColor / BWBatteryWeatherColor
 
 typedef struct ClaySettings {
   int SecondsVisibleTime;
@@ -29,6 +29,8 @@ typedef struct ClaySettings {
   GColor MajorTickColor;
   GColor DateColor;
   GColor BWDateColor;
+  GColor BatteryWeatherColor;   // battery value + weather text/icons (date keeps DateColor)
+  GColor BWBatteryWeatherColor;
   GColor HourDigitsColor;
   GColor MinutesHandColor;
   GColor MonthHandColor;
@@ -75,4 +77,7 @@ typedef struct ClaySettings {
   int RainAmount; // 0-10, index into the rain-amount icon set (see Weather.c)
   bool HourTicksOnly;
   bool ShakeToRefreshWeather;
+  int BackgroundStyle; // colour platforms only: 0 = flat BackgroundColor1, 1 = picture1,
+                       // 2 = picture2. Only the flat fill in bg_update_proc is replaced;
+                       // BackgroundColor1 is still used everywhere else.
 } __attribute__((__packed__)) ClaySettings;

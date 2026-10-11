@@ -13,5 +13,6 @@ node_modules/
 # Ignore package-lock.json
 package-lock.json
 
-# Ignore tools
+# Ignore tools & screenshots
 tools/
+screenshots/

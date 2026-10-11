@@ -17,6 +17,8 @@ Object.keys(messageKeys).forEach(function(name) {
 
 var Pebble_platform = (Pebble.getActiveWatchInfo && Pebble.getActiveWatchInfo().platform) || 'aplite';
 var isbw = (Pebble_platform === 'aplite' || Pebble_platform === 'diorite' || Pebble_platform === 'flint');
+// Only these watches show weather (HAS_WEATHER in nomos.c; the weather section of config.js).
+var hasWeather = (Pebble_platform === 'emery' || Pebble_platform === 'gabbro');
 
 // Keys the watch never reads. Clay needs them (config.js items / weather.js inputs),
 // but sending them would only use up AppMessage space.
@@ -31,7 +33,8 @@ var COLOUR_ONLY_KEYS = [
     'IconNow', 'WeatherTemp', 'TempFore', 'RainSoon', 'WBGTLevel',
     'ThemeSelect', 'BackgroundColor1', 'MinuteHandShadowColor', 'MajorTickColor',
     'MinorTickColor', 'HourDigitsColor', 'MinutesHandColor', 'SecondsHandColor',
-    'MonthHandColor', 'SubDialColor', 'DateColor', 'BatteryLineColor', 'BTQTColor'
+    'MonthHandColor', 'SubDialColor', 'DateColor', 'BatteryLineColor', 'BTQTColor',
+    'BackgroundStyle', 'BatteryWeatherColor'
 ];
 
 // Removes the named keys from a numeric-keyed settings/message object.
@@ -67,7 +70,99 @@ var readStoredSettings = function() {
     }
 };
 
+// clay.getSettings() replaces everything saved on the phone with just the settings that were
+// on the page - and the page only shows the items for the current watch. So saving on aplite
+// would wipe the weather settings (OWM API key, location...), colours and background picture
+// that only exist on colour / weather watches, and they'd come back blank on the next emery.
+// This puts back any previously saved setting that wasn't on the page this time. Settings that
+// were on the page are kept exactly as submitted (so clearing a field still clears it).
+var restoreSettingsNotOnPage = function(before) {
+    var after = readStoredSettings();
+    if (!before || !after) return;
+    var missing = {};
+    Object.keys(before).forEach(function(name) {
+        if (!after.hasOwnProperty(name)) {
+            missing[name] = before[name];
+        }
+    });
+    if (Object.keys(missing).length) {
+        clay.setSettings(missing);
+    }
+};
+
+// ---- Settings remembered per watch ----
+// Each watch keeps its own settings on the watch itself, but Clay keeps just one saved copy on
+// the phone ('clay-settings'), from whichever watch saved last, and the settings page always
+// opens with that copy. So a blue-themed basalt would show (and on Save, receive) the emery's
+// black & green. To avoid that, a copy of each watch's settings is also kept under
+// WATCH_SETTINGS_PREFIX + its ID, and swapped into 'clay-settings' when the page opens.
+// SHARED_KEYS are the exception: they belong to the user rather than the watch, so the latest
+// value is used on every watch. A watch that has never saved settings starts from the last
+// saved settings (from whichever watch that was).
+var WATCH_SETTINGS_PREFIX = 'tangent-watch-settings:';
+var SHARED_KEYS = [
+    'APIKEY_User', 'WeatherProv', 'LocationQuery', 'Lat', 'Long',   // weather account & location
+    'WeatherUnit',                                                   // temperature unit
+    'TZ_ID', 'TZ_ID_STATE'                                           // 2nd timezone
+];
+
+// This watch's ID: the phone's per-watch token if it provides one, otherwise its model.
+var watchId = function() {
+    try {
+        var token = Pebble.getWatchToken && Pebble.getWatchToken();
+        if (token) return 'watch:' + token;
+    } catch (err) {
+        console.error("No watch token available: " + err);
+    }
+    var info = (Pebble.getActiveWatchInfo && Pebble.getActiveWatchInfo()) || {};
+    return 'model:' + (info.model || Pebble_platform);
+};
+
+var readWatchSettings = function() {
+    try {
+        var json = localStorage.getItem(WATCH_SETTINGS_PREFIX + watchId());
+        return json ? JSON.parse(json) : null;
+    } catch (err) {
+        console.error("Error reading this watch's saved settings: " + err);
+        return null;
+    }
+};
+
+// Remembers the current saved settings (minus the shared ones) as this watch's settings.
+var saveWatchSettings = function() {
+    var all = readStoredSettings();
+    if (!all) return;
+    var own = {};
+    Object.keys(all).forEach(function(name) {
+        if (SHARED_KEYS.indexOf(name) < 0) own[name] = all[name];
+    });
+    try {
+        localStorage.setItem(WATCH_SETTINGS_PREFIX + watchId(), JSON.stringify(own));
+    } catch (err) {
+        console.error("Error saving this watch's settings: " + err);
+    }
+};
+
+// The settings for this watch: the last saved settings, with this watch's own values on top
+// (shared settings always come from the last save, whichever watch that was).
+var settingsForThisWatch = function() {
+    var settings = readStoredSettings();
+    if (!settings) return null;
+    var own = readWatchSettings();
+    if (own) {
+        Object.keys(own).forEach(function(name) {
+            if (SHARED_KEYS.indexOf(name) < 0) settings[name] = own[name];
+        });
+    }
+    return settings;
+};
+
 Pebble.addEventListener('showConfiguration', function(e) {
+    // Open the page with this watch's settings rather than the last watch's.
+    var settings = settingsForThisWatch();
+    if (settings) {
+        localStorage.setItem('clay-settings', JSON.stringify(settings));
+    }
     Pebble.openURL(clay.generateUrl());
 });
 
@@ -144,7 +239,9 @@ var applyWeather = function(settings) {
 // persists in localStorage) and pushes it to the watch. Used on app launch
 // (if enabled) and whenever the watch asks for a refresh.
 var refreshWeather = function(settings) {
-    if (!settings || !settings.UseWeather) {
+    // hasWeather: settings saved on an emery are kept when this phone talks to an aplite
+    // (see restoreSettingsNotOnPage), so UseWeather alone doesn't mean this watch has weather.
+    if (!hasWeather || !settings || !settings.UseWeather) {
         return;
     }
 
@@ -158,7 +255,12 @@ var refreshWeather = function(settings) {
 Pebble.addEventListener('webviewclosed', function(e) {
     if (!e || !e.response) return;
 
-    var pending = applyTimezone(clay.getSettings(e.response));
+    var before = readStoredSettings();
+    var submitted = clay.getSettings(e.response);   // also replaces the saved settings
+    restoreSettingsNotOnPage(before);
+    saveWatchSettings();
+
+    var pending = applyTimezone(submitted);
     if (!isbw) {
         pending = pending.then(applyWeather);
     }
@@ -173,7 +275,7 @@ Pebble.addEventListener('webviewclosed', function(e) {
 });
 
 Pebble.addEventListener('ready', function(e) {
-    var settings = readStoredSettings();
+    var settings = settingsForThisWatch();
     if (!settings) return;
 
     // Only refresh weather on launch if the user asked for that ("Refresh weather on launch").
@@ -192,5 +294,5 @@ Pebble.addEventListener('ready', function(e) {
 // The watch periodically sends a dummy AppMessage (a single uint8 at key 0) to ask the phone for a fresh weather reading - see tick_handler()'s s_countdown logic in nomos.c.
 Pebble.addEventListener('appmessage', function(e) {
     console.debug("Received app message: " + JSON.stringify(e.payload, null, 2));
-    refreshWeather(readStoredSettings());
+    refreshWeather(settingsForThisWatch());
 });

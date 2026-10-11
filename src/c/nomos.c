@@ -478,6 +478,7 @@ static void prv_default_settings(void) {
   settings.MinuteHandShadowColor = GColorBlack;
   settings.MinorTickColor = GColorPictonBlue;
   settings.DateColor = GColorYellow;
+  settings.BatteryWeatherColor = GColorYellow;
   settings.HourDigitsColor = GColorYellow;
   settings.MinutesHandColor = GColorWhite;
   settings.MajorTickColor = GColorYellow;
@@ -487,6 +488,7 @@ static void prv_default_settings(void) {
   settings.BWMonthHandColor = GColorWhite;
   settings.BatteryLineColor = GColorOrange;
   settings.BWDateColor = GColorWhite;
+  settings.BWBatteryWeatherColor = GColorWhite;
   settings.BWBackgroundColor1 = GColorBlack;
   settings.BWSubDialColor = GColorBlack;
   settings.BWMinuteHandShadowColor = GColorDarkGray;
@@ -521,6 +523,9 @@ static void prv_default_settings(void) {
   settings.SmoothSweep = false;
   snprintf(settings.DateLanguage, sizeof(settings.DateLanguage), "%s", "auto");
   settings.ShowBTQTIcons = true;
+  #ifdef PBL_COLOR
+  settings.BackgroundStyle = 0;
+  #endif
 
   #ifdef HAS_WEATHER
 
@@ -838,6 +843,7 @@ static void apply_bw_theme(GColor fg, GColor bg, Tuple *shadow_t) {
   settings.BWSubDialColor = bg;
   settings.BWMinuteHandShadowColor = settings.BWShadowOn ? GColorDarkGray : bg;
   settings.BWDateColor = fg;
+  settings.BWBatteryWeatherColor = fg;
   settings.BWSecondsHandColor = fg;
   settings.BWMonthHandColor = fg;
   settings.BWMinHandBatLineColor = fg;
@@ -881,6 +887,7 @@ static bool apply_colour_theme(const char *id, Tuple *shadow_t) {
     settings.MinuteHandShadowColor = settings.ShadowOn ? t->shadow : t->bg;
     settings.MinorTickColor = t->minor_tick;
     settings.DateColor = t->text;
+    settings.BatteryWeatherColor = t->text;
     settings.HourDigitsColor = t->text;
     settings.MajorTickColor = t->text;
     settings.MinutesHandColor = t->minutes_hand;
@@ -921,6 +928,8 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *text_color2_t = dict_find(iter, MESSAGE_KEY_MinorTickColor);
   Tuple *date_color_t = dict_find(iter, MESSAGE_KEY_DateColor);
   Tuple *bwdate_color_t = dict_find(iter, MESSAGE_KEY_BWDateColor);
+  Tuple *batweather_color_t = dict_find(iter, MESSAGE_KEY_BatteryWeatherColor);
+  Tuple *bwbatweather_color_t = dict_find(iter, MESSAGE_KEY_BWBatteryWeatherColor);
   Tuple *hours_color_t = dict_find(iter, MESSAGE_KEY_HourDigitsColor);
   Tuple *minutes_color_t = dict_find(iter, MESSAGE_KEY_MinutesHandColor);
   Tuple *tick_color_t = dict_find(iter, MESSAGE_KEY_MajorTickColor);
@@ -949,6 +958,9 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *bwsubdial_t = dict_find(iter, MESSAGE_KEY_BWSubDialColor);
   Tuple *roman_t = dict_find(iter, MESSAGE_KEY_Roman);
   Tuple *hourticksonly_t = dict_find(iter, MESSAGE_KEY_HourTicksOnly);
+  #ifdef PBL_COLOR
+  Tuple *bgstyle_t = dict_find(iter, MESSAGE_KEY_BackgroundStyle);
+  #endif
 
   Tuple *subdialchoice_t = dict_find(iter,MESSAGE_KEY_SubDialChoice);
   Tuple *tzoffset_t = dict_find(iter, MESSAGE_KEY_TZ_OFFSET);
@@ -1108,6 +1120,19 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     layer_mark_dirty(s_date_battery_logo_layer);
   }
 
+  #ifdef PBL_COLOR
+  if (bgstyle_t) {
+    // Clay sends a select's value as a string; accept a plain integer too.
+    int value = (bgstyle_t->type == TUPLE_CSTRING) ? atoi(bgstyle_t->value->cstring)
+                                                   : (int)bgstyle_t->value->int32;
+    if (value >= 0 && value <= 2) {
+      settings.BackgroundStyle = value;
+    }
+    settings_changed = true;
+    layer_mark_dirty(s_bg_layer);
+  }
+  #endif
+
   if (fg_shape_t) {
     settings.ForegroundShape = fg_shape_t->value->int32 == 1;
     layer_mark_dirty(s_bg_layer);
@@ -1253,6 +1278,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     layer_mark_dirty(s_canvas_layer);
                     layer_mark_dirty(s_date_battery_logo_layer);
                   }
+                  if (bwbatweather_color_t) {
+                    settings.BWBatteryWeatherColor = GColorFromHEX(bwbatweather_color_t->value->int32);
+                    layer_mark_dirty(s_date_battery_logo_layer);
+                  }
 
                   if (bwbg_color1_t) {
                     settings.BWBackgroundColor1 = GColorFromHEX(bwbg_color1_t->value->int32);
@@ -1348,6 +1377,13 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     settings.DateColor = GColorFromHEX(date_color_t->value->int32);
                     layer_mark_dirty(s_canvas_layer);
                     layer_mark_dirty(s_date_battery_logo_layer);
+                  }
+                  if (batweather_color_t) {
+                    settings.BatteryWeatherColor = GColorFromHEX(batweather_color_t->value->int32);
+                    layer_mark_dirty(s_date_battery_logo_layer);
+                    #ifdef HAS_WEATHER
+                    if (s_canvas_weather) { layer_mark_dirty(s_canvas_weather); }
+                    #endif
                   }
                   if (hours_color_t) {
                     settings.HourDigitsColor = GColorFromHEX(hours_color_t->value->int32);
@@ -2022,12 +2058,12 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
       if (settings.EnableBatteryLine) {
         GRect BatteryRect = GRect((bounds.size.w / 2) - 18, config.BatteryYOffset, 36, 40);
-        graphics_context_set_text_color(ctx, settings.BWDateColor);
+        graphics_context_set_text_color(ctx, settings.BWBatteryWeatherColor);
         graphics_draw_text(ctx, BatterytoDraw, FontBattery, BatteryRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
       }
       else{
         GRect BatteryRect = GRect((bounds.size.w / 2) - 18, config.BatteryYOffset + 4, 36, 40);
-        graphics_context_set_text_color(ctx, settings.BWDateColor);
+        graphics_context_set_text_color(ctx, settings.BWBatteryWeatherColor);
         graphics_draw_text(ctx, BatterytoDraw, FontBattery, BatteryRect, GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
       }
    
@@ -2269,7 +2305,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   #ifdef HAS_WEATHER
   if(settings.EnableBattery && grect_equal(&full_bounds, &bounds) && (!settings.UseWeather || (settings.UseWeather && !settings.ShowCurrent))){
   
-            fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+            fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
             FPoint battery_pos;
             
             int font_size_battery = config.font_size_battery * bounds.size.h/full_bounds.size.h;
@@ -2308,7 +2344,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   #else
   if(settings.EnableBattery && grect_equal(&full_bounds, &bounds) ){
   
-            fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+            fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
             FPoint battery_pos;
             
             int font_size_battery = config.font_size_battery * bounds.size.h/full_bounds.size.h;
@@ -2673,7 +2709,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
              weatherStale ? WEATHER_STALE_ICON : settings.iconnowstring);
 
     GRect IconNowRect = settings.EnableBatteryLine ? config.IconNowRect[0] : config.IconNowRect2[0];
-    graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+    graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
     graphics_draw_text(ctx, CondToDraw, FontWeatherIcons, IconNowRect, GTextOverflowModeFill, GTextAlignmentRight, NULL);
     }
 
@@ -2686,7 +2722,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
 
     #ifdef BACKLIGHTON
     GRect WarningIconRect = config.WarningIconRect[0];
-    graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+    graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
     graphics_draw_text(ctx, "\U0000F0ED", FontWeatherIcons, WarningIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
     #else
     if (settings.WBGTLevel > 0 && settings.ShowAlert) {
@@ -2699,7 +2735,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
       }
 
       GRect WarningIconRect = config.WarningIconRect[0];
-      graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+      graphics_context_set_text_color(ctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
       graphics_draw_text(ctx, warnGlyph, FontWeatherIcons, WarningIconRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
     }
     #endif
@@ -2712,7 +2748,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
     fctx_enable_aa(true);
     #endif
 
-    fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWDateColor, settings.DateColor));
+    fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
             FPoint temp_pos;
             
             int font_size_temp = (config.font_size_battery) + 6 * bounds.size.h/full_bounds.size.h;
@@ -2784,8 +2820,31 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
   GRect Background =
        GRect(0, 0, bounds.size.w, bounds.size.h);
 
-   graphics_context_set_fill_color(ctx,PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1) );
-   graphics_fill_rect(ctx, Background,0,GCornersAll);
+  bool drew_bitmap = false;
+  #ifdef PBL_COLOR
+  if (settings.BackgroundStyle == 1 || settings.BackgroundStyle == 2) {
+    // Load, draw and free the picture straight away - never keep it in memory. A full-screen
+    // picture is w*h bytes (45KB on emery, 66KB on gabbro), and every fctx text draw later in
+    // this same frame allocates a full-screen buffer of the same size (fctx_init_context) and
+    // crashes if it can't. This layer draws first, so the picture is freed before fctx needs
+    // its buffer, and the two are never held at once. If the picture can't be allocated, the
+    // flat fill below is used instead.
+    GBitmap *picture = gbitmap_create_with_resource(settings.BackgroundStyle == 2
+                                                    ? RESOURCE_ID_IMAGE_PICTURE2
+                                                    : RESOURCE_ID_IMAGE_PICTURE1);
+    if (picture) {
+      graphics_draw_bitmap_in_rect(ctx, picture, Background);
+      gbitmap_destroy(picture);
+      drew_bitmap = true;
+    }
+  }
+  #endif
+  if (!drew_bitmap) {
+    // Flat fill: either BackgroundStyle is flat, this is a B&W screen, or (very
+    // unexpectedly) the picture resource failed to load - either way, same fallback.
+    graphics_context_set_fill_color(ctx,PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1) );
+    graphics_fill_rect(ctx, Background,0,GCornersAll);
+  }
 
   if(settings.showMinorTick){
         for (int i = 0; i < 60; i++) {

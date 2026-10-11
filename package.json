@@ -111,7 +111,10 @@
       "ShowAlert",
       "RainAmount",
       "HourTicksOnly",
-      "ShakeToRefreshWeather"
+      "ShakeToRefreshWeather",
+      "BackgroundStyle",
+      "BatteryWeatherColor",
+      "BWBatteryWeatherColor"
     ],
     "resources": {
       "media": [
@@ -199,6 +202,70 @@
             "gabbro"
           ],
           "type": "font"
+        },
+        {
+          "file": "images/picture1-basalt.png",
+          "name": "IMAGE_PICTURE1",
+          "type": "bitmap",
+          "targetPlatforms": [
+            "basalt"
+          ]
+        },
+        {
+          "file": "images/picture1-chalk.png",
+          "name": "IMAGE_PICTURE1",
+          "type": "bitmap",
+          "targetPlatforms": [
+            "chalk"
+          ]
+        },
+        {
+          "file": "images/picture1-emery.png",
+          "name": "IMAGE_PICTURE1",
+          "type": "bitmap",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "file": "images/picture1-gabbro.png",
+          "name": "IMAGE_PICTURE1",
+          "type": "bitmap",
+          "targetPlatforms": [
+            "gabbro"
+          ]
+        },
+        {
+          "file": "images/picture2-basalt.png",
+          "name": "IMAGE_PICTURE2",
+          "type": "bitmap",
+          "targetPlatforms": [
+            "basalt"
+          ]
+        },
+        {
+          "file": "images/picture2-chalk.png",
+          "name": "IMAGE_PICTURE2",
+          "type": "bitmap",
+          "targetPlatforms": [
+            "chalk"
+          ]
+        },
+        {
+          "file": "images/picture2-emery.png",
+          "name": "IMAGE_PICTURE2",
+          "type": "bitmap",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "file": "images/picture2-gabbro.png",
+          "name": "IMAGE_PICTURE2",
+          "type": "bitmap",
+          "targetPlatforms": [
+            "gabbro"
+          ]
         }
       ]
     }

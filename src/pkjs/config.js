@@ -435,6 +435,18 @@ module.exports = [
        "defaultValue": true
       },
       {
+        "type": "select",
+        "messageKey": "BackgroundStyle",
+        "label": "Background",
+       // "description": "A picture behind the face instead of a flat colour",
+        "defaultValue": "0",
+        "options": [
+          { "label": "Flat colour", "value": "0" },
+          { "label": "Painted Rainbow", "value": "1" },
+          { "label": "Rose Rainbow", "value": "2" }
+        ]
+      },
+      {
         "type": "radiogroup",
         "messageKey": "ThemeSelect",
         "defaultValue": "bu",
@@ -532,8 +544,14 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Date & Battery/Weather Text Colour",
+        "label": "Date Colour",
         "messageKey": "DateColor",
+        "defaultValue": "000000"
+      },
+      {
+        "type": "color",
+        "label": "Battery & Weather Text Colour",
+        "messageKey": "BatteryWeatherColor",
         "defaultValue": "000000"
       },
       {
@@ -653,8 +671,15 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Date, Battery Value & Weather Text Colour",
+        "label": "Date Colour",
         "messageKey": "BWDateColor",
+        "defaultValue": "000000",
+        "allowGray": true
+      },
+      {
+        "type": "color",
+        "label": "Battery Value Text Colour",
+        "messageKey": "BWBatteryWeatherColor",
         "defaultValue": "000000",
         "allowGray": true
       },
