@@ -2820,6 +2820,11 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
   GRect Background =
        GRect(0, 0, bounds.size.w, bounds.size.h);
 
+  // Fill the whole layer first: on round screens the Quick View card doesn't cover
+  // the bottom arc, so anything outside the unobstructed area would show white.
+  graphics_context_set_fill_color(ctx,PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1) );
+  graphics_fill_rect(ctx, full_bounds, 0, GCornerNone);
+
   bool drew_bitmap = false;
   #ifdef PBL_COLOR
   if (settings.BackgroundStyle == 1 || settings.BackgroundStyle == 2) {
