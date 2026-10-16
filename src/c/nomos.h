@@ -79,11 +79,20 @@ typedef struct ClaySettings {
   bool ShakeToRefreshWeather;
   bool ShakeToParkHands; // shake swings the hour hand to 9 and minute hand to 3 for a few seconds
   int ParkHandsSeconds;  // ...for this many seconds
-  int BackgroundStyle; // colour platforms only: 0 = flat BackgroundColor1, 1 = picture1,
-                       // 2 = picture2. Only the flat fill in bg_update_proc is replaced;
+  int BackgroundStyle; // colour platforms only: 0 = flat BackgroundColor1, 1 painted rainbow,
+                       // 2 rose rainbow, 3-9 finishes (see prv_picture_resource). Only the flat fill in bg_update_proc is replaced;
                        // BackgroundColor1 is still used everywhere else.
   // Added in 4.3 at the end, so settings saved by older versions still load (see
   // prv_load_settings, which starts these at the minute hand's colour for those).
   GColor HourHandColor;
   GColor BWHourHandColor;
+  // Background picture colours (colour watches): painted rainbow 7 stops, rose 4, sunburst
+  // main/highlight/shadow, fume 1, the other finishes main/highlight. Added after the hour hand colours (see above).
+  GColor PicColor1;
+  GColor PicColor2;
+  GColor PicColor3;
+  GColor PicColor4;
+  GColor PicColor5;   // painted rainbow stops 5-7
+  GColor PicColor6;
+  GColor PicColor7;
 } __attribute__((__packed__)) ClaySettings;

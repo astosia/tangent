@@ -34,7 +34,8 @@ var COLOUR_ONLY_KEYS = [
     'ThemeSelect', 'BackgroundColor1', 'MinuteHandShadowColor', 'MajorTickColor',
     'MinorTickColor', 'HourDigitsColor', 'MinutesHandColor', 'SecondsHandColor',
     'MonthHandColor', 'SubDialColor', 'DateColor', 'BatteryLineColor', 'BTQTColor',
-    'BackgroundStyle', 'BatteryWeatherColor', 'HourHandColor'
+    'BackgroundStyle', 'BatteryWeatherColor', 'HourHandColor',
+    'PicColor1', 'PicColor2', 'PicColor3', 'PicColor4', 'PicColor5', 'PicColor6', 'PicColor7'
 ];
 
 // Removes the named keys from a numeric-keyed settings/message object.

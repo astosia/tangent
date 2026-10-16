@@ -1,4 +1,5 @@
 #include <pebble.h>
+#include <stddef.h>
 #include "nomos.h"
 #include "utils/weekday.h"
 #include "utils/month.h"
@@ -76,7 +77,12 @@ static int s_month;
 static int seconds;
 static bool showSeconds;
 #ifdef HAS_WEATHER
-static int s_countdown = 30;
+// Weather schedule: due once UpSlider minutes have passed since the last weather that actually
+// arrived (s_last_weather_fetch, saved across relaunches). Being anchored to the last success
+// rather than a countdown means relaunching the face, a reconnect or a settings save can't push
+// the next update back. A request that gets no reply is retried after WEATHER_RETRY_SEC.
+static time_t s_last_weather_request = 0;   // when the watch last asked (any reason); 0 = not yet
+#define WEATHER_RETRY_SEC (5 * 60)
 static time_t s_last_weather_fetch = 0;
 // Stored separately from ClaySettings/SETTINGS_KEY since it's local
 #define WEATHER_FETCH_EPOCH_KEY 248
@@ -497,6 +503,9 @@ static void prv_window_load(Window *window);
 static void prv_window_unload(Window *window);
 static void prv_init(void);
 static void prv_deinit(void);
+#ifdef PBL_COLOR
+static void prv_set_picture_default_colours(int style);
+#endif
 
 // Save settings to persistent storage
 static void prv_save_settings(void) {
@@ -565,6 +574,9 @@ static void prv_default_settings(void) {
   settings.ShowBTQTIcons = true;
   #ifdef PBL_COLOR
   settings.BackgroundStyle = 0;
+  #ifdef PBL_COLOR
+  prv_set_picture_default_colours(0);
+  #endif
   #endif
 
   #ifdef HAS_WEATHER
@@ -830,6 +842,7 @@ static void prv_weather_refresh_timeout_callback(void *data) {
 
 // Asks the phone for a fresh weather reading
 static void prv_request_weather_update(void) {
+  s_last_weather_request = time(NULL);
   s_weather_min_display_active = true;
   s_weather_awaiting_response = true;
   prv_update_weather_refreshing_state();
@@ -844,6 +857,25 @@ static void prv_request_weather_update(void) {
   app_message_outbox_begin(&iter);
   dict_write_uint8(iter, 0, 0);
   app_message_outbox_send();
+}
+
+// Asks for weather if it's due: UpSlider minutes since the last weather arrived (or none ever
+// has, or the clock has gone backwards), and no request in the last WEATHER_RETRY_SEC.
+static void prv_request_weather_if_due(void) {
+  if (!settings.UseWeather) {
+    return;
+  }
+  time_t now = time(NULL);
+  int interval_sec = (settings.UpSlider > 0 ? settings.UpSlider : 30) * 60;
+  // (30s of slack: the reply lands a few seconds after the minute tick that asked for it, and
+  // without it every update would slip to the following minute)
+  bool due = s_last_weather_fetch == 0 || now < s_last_weather_fetch ||
+             (now - s_last_weather_fetch) >= interval_sec - 30;
+  bool asked_recently = s_last_weather_request != 0 && now >= s_last_weather_request &&
+                        (now - s_last_weather_request) < WEATHER_RETRY_SEC;
+  if (due && !asked_recently) {
+    prv_request_weather_update();
+  }
 }
 #endif
 
@@ -862,7 +894,6 @@ static void bluetooth_connection_handler(bool connected) {
 
   #ifdef HAS_WEATHER
   if (connected && settings.UseWeather) {
-    s_countdown = settings.UpSlider > 0 ? settings.UpSlider : 1;
     if (s_weather_reconnect_timer) { app_timer_cancel(s_weather_reconnect_timer); }
     s_weather_reconnect_timer = app_timer_register(WEATHER_RECONNECT_DELAY_MS, prv_weather_reconnect_delay_callback, NULL);
   }
@@ -874,12 +905,19 @@ static void bluetooth_connection_handler(bool connected) {
 static void prv_load_settings(void) {
   prv_default_settings();
   int bytes_read = persist_read_data(SETTINGS_KEY, &settings, sizeof(settings));
-  if (bytes_read < (int)sizeof(settings)) {
-    // Saved by a version before the hour hand had its own colour (or nothing saved yet): the
-    // hour hand keeps matching the minute hand until the colour is changed in settings.
+  // Settings saved by older versions are shorter: fields added since keep sensible values.
+  if (bytes_read <= (int)offsetof(ClaySettings, HourHandColor)) {
+    // before the hour hand had its own colour (or nothing saved yet): it keeps matching the
+    // minute hand until the colour is changed in settings
     settings.HourHandColor = settings.MinutesHandColor;
     settings.BWHourHandColor = settings.BWMinHandBatLineColor;
   }
+  #ifdef PBL_COLOR
+  if (bytes_read <= (int)offsetof(ClaySettings, PicColor5)) {
+    // before pictures had colours, or before the painted rainbow had seven stops
+    prv_set_picture_default_colours(settings.BackgroundStyle);
+  }
+  #endif
 
   #ifdef HAS_WEATHER
   if (persist_exists(WEATHER_FETCH_EPOCH_KEY)) {
@@ -1130,9 +1168,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
 
   if (frequpdate){
-    settings.UpSlider = (int) frequpdate -> value -> int32;
-    //Restart the counter
-    s_countdown = settings.UpSlider;
+    settings.UpSlider = (int) frequpdate -> value -> int32;   // the next minute tick uses the new interval
      settings_changed = true;
   }
 
@@ -1230,11 +1266,24 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     // Clay sends a select's value as a string; accept a plain integer too.
     int value = (bgstyle_t->type == TUPLE_CSTRING) ? atoi(bgstyle_t->value->cstring)
                                                    : (int)bgstyle_t->value->int32;
-    if (value >= 0 && value <= 2) {
+    if (value >= 0 && value <= 9) {
       settings.BackgroundStyle = value;
     }
     settings_changed = true;
     layer_mark_dirty(s_bg_layer);
+  }
+  // Background picture colours (any theme). Sent as 0xRRGGBB integers like the other colours.
+  const uint32_t piccolour_keys[7] = { MESSAGE_KEY_PicColor1, MESSAGE_KEY_PicColor2, MESSAGE_KEY_PicColor3,
+    MESSAGE_KEY_PicColor4, MESSAGE_KEY_PicColor5, MESSAGE_KEY_PicColor6, MESSAGE_KEY_PicColor7 };
+  GColor *piccolour[7] = { &settings.PicColor1, &settings.PicColor2, &settings.PicColor3, &settings.PicColor4,
+                           &settings.PicColor5, &settings.PicColor6, &settings.PicColor7 };
+  for (int i = 0; i < 7; i++) {
+    Tuple *colour_t = dict_find(iter, piccolour_keys[i]);
+    if (colour_t) {
+      *piccolour[i] = GColorFromHEX(colour_t->value->int32);
+      settings_changed = true;
+      layer_mark_dirty(s_bg_layer);
+    }
   }
   #endif
 
@@ -1566,6 +1615,9 @@ static void update_time_state(struct tm *tick_time) {
   s_hours = tick_time->tm_hour;
   layer_mark_dirty(s_canvas_layer);
   layer_mark_dirty(s_date_battery_logo_layer);
+  if (settings.SubDialChoice == 4) {
+    layer_mark_dirty(s_canvas_month_hand);   // battery meter: pick up the latest charge every minute
+  }
   if ((settings.SubDialChoice == 3 || settings.SubDialChoice == 6) && tick_time->tm_mon != s_month) {
     s_month = tick_time->tm_mon;
   }
@@ -1586,13 +1638,8 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 
   if (units_changed & MINUTE_UNIT) {
     #ifdef HAS_WEATHER
-    // Ask the phone for fresh weather every UpSlider minutes - only while weather is switched on
-    // (otherwise the phone ignores the request anyway, and a watch whose saved settings predate
-    // weather, UpSlider 0, would wake the Bluetooth link every minute for nothing)
-    if (settings.UseWeather && --s_countdown <= 0) {
-      s_countdown = settings.UpSlider > 0 ? settings.UpSlider : 1;
-      prv_request_weather_update();
-    }
+    // Ask the phone for fresh weather once it's UpSlider minutes old (only while weather is on)
+    prv_request_weather_if_due();
     #endif
 
     update_time_state(tick_time);
@@ -1650,12 +1697,11 @@ static void draw_seconds_month_background(GContext *ctx) {
 
   
   
-  for (int i = 0; i < 12; i++) {
-        int angle = i * 30 - 90;
-
-
+  // 12 ticks (hours / months / seconds), or 10 for the battery meter (one every 10%)
+  int tick_count = (settings.SubDialChoice == 4) ? 10 : 12;
+  for (int i = 0; i < tick_count; i++) {
+        int angle = i * 360 / tick_count - 90;
         draw_seconds_tick(ctx, angle, config.majorticklength, PBL_IF_BW_ELSE(settings.BWMajorTickColor, settings.MajorTickColor));
-        
   }
 
 
@@ -2599,7 +2645,7 @@ static void layer_update_proc_complication(Layer *layer, GContext *ctx) {
 
 static void layer_update_proc_month_hand(Layer *layer, GContext *ctx) {
 
-    if(settings.SubDialChoice != 3 && settings.SubDialChoice != 6){
+    if(settings.SubDialChoice != 3 && settings.SubDialChoice != 6 && settings.SubDialChoice != 4){
     return;
       }
 
@@ -2609,6 +2655,16 @@ static void layer_update_proc_month_hand(Layer *layer, GContext *ctx) {
     if (!grect_equal(&full_bounds, &bounds)) {
       return;
     }
+    if (settings.SubDialChoice == 4) {
+      // Battery meter: the hand goes round with the charge - 12 o'clock is full (100%),
+      // 9 is 75%, 6 is 50%, 3 is 25%. Uses the sub-dial hand 2 (month hand) colour.
+      int battery_angle = battery_state_service_peek().charge_percent * 360 / 100 - 90;
+      draw_seconds_month_background(ctx);
+      draw_month_hand(ctx, battery_angle, config.second_hand_a, config.second_hand_b,  PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
+      draw_seconds_center(ctx,  PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1), PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
+      return;
+    }
+
        //month = prv_tick_time->tm_mon;
     int month = s_month + 1;    
   
@@ -2983,46 +3039,253 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
 #endif
 
 #ifdef PBL_COLOR
-// Draws a background picture by copying it from its resource straight into the frame buffer,
-// one row at a time, so it takes no heap at all. (Loading it as a GBitmap took a full-screen
-// block - 32KB on chalk, 45KB on emery, 66KB on gabbro - just when fctx also needs a
-// full-screen buffer for the text; on chalk's 64KB that was enough to run out of memory.)
-// The resource is raw GColor8 bytes, one per pixel, row by row, at this screen's exact size -
-// made from the PNGs by tools/make_picture_bins.py. On the round screen only the visible part
-// of each row is copied. Returns false (and the caller fills with the flat colour) if the
-// resource is missing or the wrong size.
-static bool prv_draw_picture(GContext *ctx, uint32_t resource_id, GRect area) {
-  ResHandle handle = resource_get_handle(resource_id);
+// ---- Background pictures (colour watches) -----------------------------------------------------
+// Each picture is a "map" resource made by tools/make_backgrounds.py: one byte per pixel saying
+// where that pixel sits along the colours picked in settings (PicColor1-4), not what colour it
+// is. At draw time a 256-entry table turns map bytes into colours, which are then dithered to
+// the 64 Pebble colours, so any colours can be chosen without new images. (The same arithmetic
+// is in make_backgrounds.py and modifications.js - keep all three in step.)
+//
+// Map resource: 8-byte header 'T', mode, width (LE16), height (LE16), kind, 0; for rainbows
+// (kind 1) a 256 x 3-byte table (position, whiteness, value) follows; then width*height bytes.
+// Modes: 0 = full size, 1 = half size smoothed back up, 2 = half size in 2x2 blocks, 3 = a tile.
+
+#define PICTURE_HEADER_SIZE 8
+#define PICTURE_TABLE_SIZE 768
+#define PICTURE_MAX_ROW 260
+
+// BackgroundStyle -> resource. 1 painted rainbow, 2 rose rainbow, 3.. the finishes.
+static uint32_t prv_picture_resource(int style) {
+  switch (style) {
+    case 1: return RESOURCE_ID_BG_PAINTED;
+    case 2: return RESOURCE_ID_BG_ROSE;
+    case 3: return RESOURCE_ID_BG_SUNBURST;
+    case 4: return RESOURCE_ID_BG_HAMMERED;
+    case 6: return RESOURCE_ID_BG_FUME;
+    case 7: return RESOURCE_ID_BG_ENAMEL;
+    case 9: return RESOURCE_ID_BG_TEXTURED;
+    default: return 0;   // includes 5 and 8 (wave and lacquer, since removed): flat colour
+  }
+}
+
+// Each picture's own colours, used until they're changed in settings (and for settings saved
+// before pictures had colours). GColor8 bytes 0b11RRGGBB; unused stops repeat the last one.
+#define PICTURE_STOPS 7
+static const uint8_t PICTURE_DEFAULT_COLOURS[10][PICTURE_STOPS] = {
+  { 0xFC, 0xCF, 0xF3, 0xC3, 0xC3, 0xC3, 0xC3 },   // 0 flat (unused): same as the rose
+  { 0xF0, 0xF4, 0xFC, 0xC9, 0xC7, 0xC2, 0xF3 },   // 1 painted: red, orange, yellow, green, blue, navy, magenta
+  { 0xFC, 0xCF, 0xF3, 0xC3, 0xC3, 0xC3, 0xC3 },   // 2 rose: top yellow, 9 o'clock cyan, 3 o'clock magenta, bottom blue
+  { 0xC6, 0xDB, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1 },   // 3 sunburst: cobalt, sky blue, shadow navy
+  { 0xC7, 0xDB, 0xDB, 0xDB, 0xDB, 0xDB, 0xDB },   // 4 hammered: blue, sky blue
+  { 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA },   // 5 (wave, removed)
+  { 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA },   // 6 fume: light grey
+  { 0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF },   // 7 enamel: cream, white
+  { 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA },   // 8 (lacquer, removed)
+  { 0xEA, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF },   // 9 textured: light grey, white
+};
+
+static void prv_set_picture_default_colours(int style) {
+  if (style < 0 || style > 9) { style = 0; }
+  settings.PicColor1 = (GColor){ .argb = PICTURE_DEFAULT_COLOURS[style][0] };
+  settings.PicColor2 = (GColor){ .argb = PICTURE_DEFAULT_COLOURS[style][1] };
+  settings.PicColor3 = (GColor){ .argb = PICTURE_DEFAULT_COLOURS[style][2] };
+  settings.PicColor4 = (GColor){ .argb = PICTURE_DEFAULT_COLOURS[style][3] };
+  settings.PicColor5 = (GColor){ .argb = PICTURE_DEFAULT_COLOURS[style][4] };
+  settings.PicColor6 = (GColor){ .argb = PICTURE_DEFAULT_COLOURS[style][5] };
+  settings.PicColor7 = (GColor){ .argb = PICTURE_DEFAULT_COLOURS[style][6] };
+}
+
+typedef struct { int r, g, b; } PicRGB;
+
+static PicRGB prv_pic_rgb(GColor c) {
+  PicRGB o = { ((c.argb >> 4) & 3) * 85, ((c.argb >> 2) & 3) * 85, (c.argb & 3) * 85 };
+  return o;
+}
+
+// a + (b - a) * num / den, rounding towards a
+static int prv_pic_step(int a, int b, int num, int den) {
+  return b >= a ? a + (b - a) * num / den : a - (a - b) * num / den;
+}
+
+// Integer HSV: h 0..1535 (6 x 256), s and v 0..255
+static void prv_pic_to_hsv(PicRGB c, int *h, int *s, int *v) {
+  int mx = c.r > c.g ? (c.r > c.b ? c.r : c.b) : (c.g > c.b ? c.g : c.b);
+  int mn = c.r < c.g ? (c.r < c.b ? c.r : c.b) : (c.g < c.b ? c.g : c.b);
+  int d = mx - mn;
+  *v = mx;
+  *s = mx ? d * 255 / mx : 0;
+  if (d == 0) { *h = 0; return; }
+  int hh;
+  if (mx == c.r)      { hh = c.g >= c.b ? 256 * (c.g - c.b) / d : 1536 - 256 * (c.b - c.g) / d; }
+  else if (mx == c.g) { hh = c.b >= c.r ? 512 + 256 * (c.b - c.r) / d : 512 - 256 * (c.r - c.b) / d; }
+  else                { hh = c.r >= c.g ? 1024 + 256 * (c.r - c.g) / d : 1024 - 256 * (c.g - c.r) / d; }
+  *h = hh % 1536;
+}
+
+static PicRGB prv_pic_from_hsv(int h, int s, int v) {
+  int region = h / 256, f = h % 256;
+  int p = v * (255 - s) / 255;
+  int q = v * (255 - s * f / 256) / 255;
+  int t = v * (255 - s * (256 - f) / 256) / 255;
+  PicRGB o;
+  switch (region) {
+    case 0:  o.r = v; o.g = t; o.b = p; break;
+    case 1:  o.r = q; o.g = v; o.b = p; break;
+    case 2:  o.r = p; o.g = v; o.b = t; break;
+    case 3:  o.r = p; o.g = q; o.b = v; break;
+    case 4:  o.r = t; o.g = p; o.b = v; break;
+    default: o.r = v; o.g = p; o.b = q; break;
+  }
+  return o;
+}
+
+// num/den of the way from colour a to b, going round the colour wheel the short way
+static PicRGB prv_pic_blend(PicRGB a, PicRGB b, int num, int den) {
+  int ha, sa, va, hb, sb, vb;
+  prv_pic_to_hsv(a, &ha, &sa, &va);
+  prv_pic_to_hsv(b, &hb, &sb, &vb);
+  if (sa == 0) { ha = hb; }
+  if (sb == 0) { hb = ha; }
+  int dh = hb - ha;
+  if (dh > 768) { dh -= 1536; } else if (dh < -768) { dh += 1536; }
+  int h = dh >= 0 ? ha + dh * num / den : ha - (-dh) * num / den;
+  h = (h + 1536) % 1536;
+  return prv_pic_from_hsv(h, prv_pic_step(sa, sb, num, den), prv_pic_step(va, vb, num, den));
+}
+
+// Fills lut[256][3] with each map byte's colour as 0..48 per channel (ready to dither).
+static bool prv_build_picture_lut(uint8_t (*lut)[3], int style, ResHandle handle) {
+  PicRGB stops[PICTURE_STOPS] = {
+    prv_pic_rgb(settings.PicColor1), prv_pic_rgb(settings.PicColor2), prv_pic_rgb(settings.PicColor3),
+    prv_pic_rgb(settings.PicColor4), prv_pic_rgb(settings.PicColor5), prv_pic_rgb(settings.PicColor6),
+    prv_pic_rgb(settings.PicColor7) };
+  // finishes ramp shadow -> main -> highlight; the shadow is black, except sunburst's colour 3
+  PicRGB shadow = { 0, 0, 0 };
+  if (style == 3) { shadow = stops[2]; }
+  uint8_t chunk[48];   // rainbow table, read 16 entries at a time
+  for (int b = 0; b < 256; b++) {
+    PicRGB c;
+    if (style >= 3) {
+      // finishes: shadow (0) -> main colour (128) -> highlight (255)
+      if (b <= 128) {
+        c.r = prv_pic_step(shadow.r, stops[0].r, b, 128);
+        c.g = prv_pic_step(shadow.g, stops[0].g, b, 128);
+        c.b = prv_pic_step(shadow.b, stops[0].b, b, 128);
+      } else {
+        c.r = prv_pic_step(stops[0].r, stops[1].r, b - 128, 127);
+        c.g = prv_pic_step(stops[0].g, stops[1].g, b - 128, 127);
+        c.b = prv_pic_step(stops[0].b, stops[1].b, b - 128, 127);
+      }
+    } else {
+      if (b % 16 == 0 &&
+          resource_load_byte_range(handle, PICTURE_HEADER_SIZE + b * 3, chunk, sizeof(chunk)) != sizeof(chunk)) {
+        return false;
+      }
+      int pos = chunk[(b % 16) * 3], white = chunk[(b % 16) * 3 + 1], value = chunk[(b % 16) * 3 + 2];
+      if (style == 1) {          // painted: seven stops, one every 42.5 positions
+        int seg = 2 * pos / 85 < 5 ? 2 * pos / 85 : 5;
+        c = prv_pic_blend(stops[seg], stops[seg + 1], 2 * pos - seg * 85, 85);
+      } else {                   // rose: left side via stop2, right side via stop3, to stop4
+        PicRGB mid = pos >= 128 ? stops[2] : stops[1];
+        int q = pos & 127;
+        c = (2 * q <= 127) ? prv_pic_blend(stops[0], mid, 2 * q, 127)
+                           : prv_pic_blend(mid, stops[3], 2 * q - 127, 127);
+      }
+      c.r = (c.r + (255 - c.r) * white / 255) * value / 255;
+      c.g = (c.g + (255 - c.g) * white / 255) * value / 255;
+      c.b = (c.b + (255 - c.b) * white / 255) * value / 255;
+    }
+    lut[b][0] = (c.r * 48 + 127) / 255;
+    lut[b][1] = (c.g * 48 + 127) / 255;
+    lut[b][2] = (c.b * 48 + 127) / 255;
+  }
+  return true;
+}
+
+static const uint8_t PICTURE_BAYER[4][4] = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };
+
+// Draws background picture `style` straight into the frame buffer, one row at a time. The
+// colour table and two row buffers (~1.2KB) are allocated here and freed before returning, so
+// nothing is held while the text layers need fctx's full-screen buffer. Returns false (and the
+// caller fills with the flat colour) if the resource is missing or wrong, or memory is short.
+static bool prv_draw_picture(GContext *ctx, int style, GRect area) {
+  uint32_t resource_id = prv_picture_resource(style);
+  ResHandle handle = resource_id ? resource_get_handle(resource_id) : NULL;
   if (!handle) {
     return false;
   }
-  GBitmap *fb = graphics_capture_frame_buffer(ctx);
-  if (!fb) {
+  uint8_t header[PICTURE_HEADER_SIZE];
+  if (resource_load_byte_range(handle, 0, header, sizeof(header)) != sizeof(header) || header[0] != 'T') {
     return false;
   }
-  GRect fb_bounds = gbitmap_get_bounds(fb);
-  int w = fb_bounds.size.w;
-  int h = fb_bounds.size.h;
-  if (resource_size(handle) != (size_t)(w * h)) {
-    APP_LOG(APP_LOG_LEVEL_WARNING, "picture resource is %d bytes, expected %d", (int)resource_size(handle), w * h);
-    graphics_release_frame_buffer(ctx, fb);
+  int mode = header[1];
+  int sw = header[2] | (header[3] << 8);
+  int sh = header[4] | (header[5] << 8);
+  uint32_t data_offset = PICTURE_HEADER_SIZE + (header[6] ? PICTURE_TABLE_SIZE : 0);
+  if (sw <= 0 || sh <= 0 || sw > PICTURE_MAX_ROW || resource_size(handle) != data_offset + (uint32_t)(sw * sh)) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "background %d: bad picture resource", style);
     return false;
   }
-  int y_start = area.origin.y < 0 ? 0 : area.origin.y;
-  int y_end = area.origin.y + area.size.h;
-  if (y_end > h) {
-    y_end = h;
-  }
-  for (int y = y_start; y < y_end; y++) {
-    GBitmapDataRowInfo row = gbitmap_get_data_row_info(fb, y);
-    int x0 = row.min_x;
-    int x1 = row.max_x < w - 1 ? row.max_x : w - 1;
-    if (x1 >= x0) {
-      resource_load_byte_range(handle, (uint32_t)(y * w + x0), row.data + x0, (size_t)(x1 - x0 + 1));
+
+  uint8_t (*lut)[3] = malloc(256 * 3);
+  uint8_t *row_a = malloc(sw);
+  uint8_t *row_b = malloc(sw);
+  bool ok = lut && row_a && row_b && prv_build_picture_lut(lut, style, handle);
+  GBitmap *fb = ok ? graphics_capture_frame_buffer(ctx) : NULL;
+  if (fb) {
+    GRect fb_bounds = gbitmap_get_bounds(fb);
+    int w = fb_bounds.size.w;
+    int h = fb_bounds.size.h;
+    int y_start = area.origin.y < 0 ? 0 : area.origin.y;
+    int y_end = area.origin.y + area.size.h < h ? area.origin.y + area.size.h : h;
+    for (int y = y_start; y < y_end; y++) {
+      GBitmapDataRowInfo row = gbitmap_get_data_row_info(fb, y);
+      int x0 = row.min_x;
+      int x1 = row.max_x < w - 1 ? row.max_x : w - 1;
+      if (x1 < x0) {
+        continue;
+      }
+      // the source row(s) this screen row comes from
+      int src_y = mode == 0 ? y : (mode == 3 ? y % sh : y >> 1);
+      if (src_y >= sh) { src_y = sh - 1; }
+      resource_load_byte_range(handle, data_offset + src_y * sw, row_a, sw);
+      if (mode == 1) {
+        int k2 = (y & 1) ? src_y + 1 : src_y - 1;
+        if (k2 < 0) { k2 = 0; }
+        if (k2 >= sh) { k2 = sh - 1; }
+        resource_load_byte_range(handle, data_offset + k2 * sw, row_b, sw);
+      }
+      const uint8_t *bayer = PICTURE_BAYER[y & 3];
+      for (int x = x0; x <= x1; x++) {
+        int s;
+        if (mode == 0) {
+          s = row_a[x < sw ? x : sw - 1];
+        } else if (mode == 2) {
+          int j = x >> 1;
+          s = row_a[j < sw ? j : sw - 1];
+        } else if (mode == 3) {
+          s = row_a[x % sw];
+        } else {   // mode 1: half size, smoothed back up (weights 3:1 each way)
+          int j = x >> 1;
+          if (j >= sw) { j = sw - 1; }
+          int j2 = (x & 1) ? j + 1 : j - 1;
+          if (j2 < 0) { j2 = 0; }
+          if (j2 >= sw) { j2 = sw - 1; }
+          int near = 3 * row_a[j] + row_b[j];
+          int far = 3 * row_a[j2] + row_b[j2];
+          s = (3 * near + far + 8) >> 4;
+        }
+        int t = bayer[x & 3];
+        const uint8_t *e = lut[s];
+        row.data[x] = 0xC0 | (((e[0] + t) >> 4) << 4) | (((e[1] + t) >> 4) << 2) | ((e[2] + t) >> 4);
+      }
     }
+    graphics_release_frame_buffer(ctx, fb);
   }
-  graphics_release_frame_buffer(ctx, fb);
-  return true;
+  free(row_b);
+  free(row_a);
+  free(lut);
+  return fb != NULL;
 }
 #endif
 
@@ -3032,22 +3295,23 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_unobstructed_bounds(layer);
   GRect full_bounds = layer_get_bounds(layer);
 
-  GRect Background =
-       GRect(0, 0, bounds.size.w, bounds.size.h);
+  // The background always covers the whole screen, not just the unobstructed part: on round
+  // screens Timeline Quick View doesn't cover the bottom of the circle, which would otherwise
+  // show whatever was left there (white).
+  GRect FullBackground =
+       GRect(0, 0, full_bounds.size.w, full_bounds.size.h);
 
   bool drew_bitmap = false;
   #ifdef PBL_COLOR
-  if (settings.BackgroundStyle == 1 || settings.BackgroundStyle == 2) {
-    drew_bitmap = prv_draw_picture(ctx, settings.BackgroundStyle == 2 ? RESOURCE_ID_IMAGE_PICTURE2
-                                                                      : RESOURCE_ID_IMAGE_PICTURE1,
-                                   Background);
+  if (settings.BackgroundStyle >= 1 && settings.BackgroundStyle <= 9) {
+    drew_bitmap = prv_draw_picture(ctx, settings.BackgroundStyle, FullBackground);
   }
   #endif
   if (!drew_bitmap) {
     // Flat fill: either BackgroundStyle is flat, this is a B&W screen, or (very
     // unexpectedly) the picture resource failed to load - either way, same fallback.
     graphics_context_set_fill_color(ctx,PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1) );
-    graphics_fill_rect(ctx, Background,0,GCornersAll);
+    graphics_fill_rect(ctx, FullBackground,0,GCornersAll);
   }
 
   if(settings.showMinorTick){
@@ -3085,9 +3349,6 @@ static void prv_window_load(Window *window) {
     light_enable(true);  ///for ShareX screencapture gifs.  Must comment out declaration on line 11 before publishing, otherwise the backlight will stay on!
   #endif
 
-  #ifdef HAS_WEATHER
-  s_countdown = settings.UpSlider;
-  #endif
 
   time_t temp = time(NULL);
   g_current_epoch = temp;
@@ -3203,8 +3464,12 @@ static void prv_window_load(Window *window) {
 
   //refresh weather on launch/relaunch
   #ifdef HAS_WEATHER
+  // Always if "Refresh Weather on Relaunch" is on; otherwise only if it's due (so going in and out
+  // of menus no longer holds the scheduled update back).
   if (settings.UseWeather && settings.RefreshWeatherOnLaunch) {
     prv_request_weather_update();
+  } else {
+    prv_request_weather_if_due();
   }
   #endif
 

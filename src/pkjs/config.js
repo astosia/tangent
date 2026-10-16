@@ -202,10 +202,10 @@ module.exports = [
               "label": "Month always on + seconds with timeout",
               "value": 6
             },
-            // { 
-            //   "label": "Battery Percentage",
-            //   "value": 4 
-            // },
+            { 
+              "label": "Battery level (12 = full, 6 = half)",
+              "value": 4 
+            },
             { 
               "label": "Second Timezone",
               "value": 5
@@ -401,7 +401,7 @@ module.exports = [
         "type": "toggle",
         "messageKey": "RefreshWeatherOnLaunch",
         "label": "Refresh Weather on Relaunch",
-        "description": "In addition to the update frequency above, also request fresh weather every time watchface loads. Off = keeps last known reading between relaunches",
+        "description": "Request fresh weather every time the watchface loads. Off = only when the last reading is older than the update frequency above",
         "defaultValue": false
       },
       {
@@ -462,8 +462,59 @@ module.exports = [
         "options": [
           { "label": "Flat colour", "value": "0" },
           { "label": "Painted Rainbow", "value": "1" },
-          { "label": "Rose Rainbow", "value": "2" }
+          { "label": "Rose Rainbow", "value": "2" },
+          { "label": "Sunburst", "value": "3" },
+          { "label": "Hammered", "value": "4" },
+          { "label": "Fumé", "value": "6" },
+          { "label": "Enamel", "value": "7" },
+          { "label": "Textured", "value": "9" }
         ]
+      },
+      // Background picture colours. Which of these show, and what they're called, depends on
+      // the background picked (modifications.js): painted rainbow 7, rose 4, sunburst 3,
+      // fume 1, the others 2.
+      // Picking a background resets them to that background's own colours.
+      {
+        "type": "color",
+        "messageKey": "PicColor1",
+        "label": "Background colour 1",
+        "defaultValue": "FFFF00"
+      },
+      {
+        "type": "color",
+        "messageKey": "PicColor2",
+        "label": "Background colour 2",
+        "defaultValue": "00FFFF"
+      },
+      {
+        "type": "color",
+        "messageKey": "PicColor3",
+        "label": "Background colour 3",
+        "defaultValue": "FF00FF"
+      },
+      {
+        "type": "color",
+        "messageKey": "PicColor4",
+        "label": "Background colour 4",
+        "defaultValue": "0000FF"
+      },
+      {
+        "type": "color",
+        "messageKey": "PicColor5",
+        "label": "Background colour 5",
+        "defaultValue": "0055FF"
+      },
+      {
+        "type": "color",
+        "messageKey": "PicColor6",
+        "label": "Background colour 6",
+        "defaultValue": "0000AA"
+      },
+      {
+        "type": "color",
+        "messageKey": "PicColor7",
+        "label": "Background colour 7",
+        "defaultValue": "FF00FF"
       },
       {
         "type": "radiogroup",
@@ -557,7 +608,7 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Sub-dial Hand 2:<br>Month or 2nd timezone hour",
+        "label": "Sub-dial Hand 2:<br>Month, battery or 2nd timezone hour",
         "messageKey": "MonthHandColor",
         "defaultValue": "FF5500"
       },

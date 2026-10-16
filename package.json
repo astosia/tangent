@@ -1,7 +1,7 @@
 {
   "name": "tangent",
   "author": "astosia",
-  "version": "4.6.0",
+  "version": "4.3.0",
   "keywords": [
     "pebble",
     "watchface",
@@ -118,7 +118,14 @@
       "ShakeToParkHands",
       "ParkHandsSeconds",
       "HourHandColor",
-      "BWHourHandColor"
+      "BWHourHandColor",
+      "PicColor1",
+      "PicColor2",
+      "PicColor3",
+      "PicColor4",
+      "PicColor5",
+      "PicColor6",
+      "PicColor7"
     ],
     "resources": {
       "media": [
@@ -180,8 +187,8 @@
         {
           "file": "data/Tangent.ffont",
           "name": "FONT_DATE_FCTX",
-          "targetPlatforms": 
-          [ "emery",
+          "targetPlatforms": [
+            "emery",
             "gabbro"
           ],
           "type": "raw"
@@ -189,8 +196,8 @@
         {
           "file": "data/Tangentdatediacritics.ffont",
           "name": "FONT_DATE_FCTX",
-          "targetPlatforms": 
-          [ "diorite",
+          "targetPlatforms": [
+            "diorite",
             "flint",
             "basalt",
             "chalk"
@@ -221,66 +228,205 @@
           "type": "font"
         },
         {
-          "file": "images/picture1-basalt.bin",
-          "name": "IMAGE_PICTURE1",
+          "file": "images/bg-painted-basalt.bin",
+          "name": "BG_PAINTED",
           "type": "raw",
           "targetPlatforms": [
             "basalt"
           ]
         },
         {
-          "file": "images/picture1-chalk.bin",
-          "name": "IMAGE_PICTURE1",
+          "file": "images/bg-painted-chalk.bin",
+          "name": "BG_PAINTED",
           "type": "raw",
           "targetPlatforms": [
             "chalk"
           ]
         },
         {
-          "file": "images/picture1-emery.bin",
-          "name": "IMAGE_PICTURE1",
+          "file": "images/bg-painted-emery.bin",
+          "name": "BG_PAINTED",
           "type": "raw",
           "targetPlatforms": [
             "emery"
           ]
         },
         {
-          "file": "images/picture1-gabbro.bin",
-          "name": "IMAGE_PICTURE1",
+          "file": "images/bg-painted-gabbro.bin",
+          "name": "BG_PAINTED",
           "type": "raw",
           "targetPlatforms": [
             "gabbro"
           ]
         },
         {
-          "file": "images/picture2-basalt.bin",
-          "name": "IMAGE_PICTURE2",
+          "file": "images/bg-rose-basalt.bin",
+          "name": "BG_ROSE",
           "type": "raw",
           "targetPlatforms": [
             "basalt"
           ]
         },
         {
-          "file": "images/picture2-chalk.bin",
-          "name": "IMAGE_PICTURE2",
+          "file": "images/bg-rose-chalk.bin",
+          "name": "BG_ROSE",
           "type": "raw",
           "targetPlatforms": [
             "chalk"
           ]
         },
         {
-          "file": "images/picture2-emery.bin",
-          "name": "IMAGE_PICTURE2",
+          "file": "images/bg-rose-emery.bin",
+          "name": "BG_ROSE",
           "type": "raw",
           "targetPlatforms": [
             "emery"
           ]
         },
         {
-          "file": "images/picture2-gabbro.bin",
-          "name": "IMAGE_PICTURE2",
+          "file": "images/bg-rose-gabbro.bin",
+          "name": "BG_ROSE",
           "type": "raw",
           "targetPlatforms": [
+            "gabbro"
+          ]
+        },
+        {
+          "file": "images/bg-sunburst-basalt.bin",
+          "name": "BG_SUNBURST",
+          "type": "raw",
+          "targetPlatforms": [
+            "basalt"
+          ]
+        },
+        {
+          "file": "images/bg-sunburst-chalk.bin",
+          "name": "BG_SUNBURST",
+          "type": "raw",
+          "targetPlatforms": [
+            "chalk"
+          ]
+        },
+        {
+          "file": "images/bg-sunburst-emery.bin",
+          "name": "BG_SUNBURST",
+          "type": "raw",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "file": "images/bg-sunburst-gabbro.bin",
+          "name": "BG_SUNBURST",
+          "type": "raw",
+          "targetPlatforms": [
+            "gabbro"
+          ]
+        },
+        {
+          "file": "images/bg-hammered-basalt.bin",
+          "name": "BG_HAMMERED",
+          "type": "raw",
+          "targetPlatforms": [
+            "basalt"
+          ]
+        },
+        {
+          "file": "images/bg-hammered-chalk.bin",
+          "name": "BG_HAMMERED",
+          "type": "raw",
+          "targetPlatforms": [
+            "chalk"
+          ]
+        },
+        {
+          "file": "images/bg-hammered-emery.bin",
+          "name": "BG_HAMMERED",
+          "type": "raw",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "file": "images/bg-hammered-gabbro.bin",
+          "name": "BG_HAMMERED",
+          "type": "raw",
+          "targetPlatforms": [
+            "gabbro"
+          ]
+        },
+        {
+          "file": "images/bg-fume-basalt.bin",
+          "name": "BG_FUME",
+          "type": "raw",
+          "targetPlatforms": [
+            "basalt"
+          ]
+        },
+        {
+          "file": "images/bg-fume-chalk.bin",
+          "name": "BG_FUME",
+          "type": "raw",
+          "targetPlatforms": [
+            "chalk"
+          ]
+        },
+        {
+          "file": "images/bg-fume-emery.bin",
+          "name": "BG_FUME",
+          "type": "raw",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "file": "images/bg-fume-gabbro.bin",
+          "name": "BG_FUME",
+          "type": "raw",
+          "targetPlatforms": [
+            "gabbro"
+          ]
+        },
+        {
+          "file": "images/bg-enamel-basalt.bin",
+          "name": "BG_ENAMEL",
+          "type": "raw",
+          "targetPlatforms": [
+            "basalt"
+          ]
+        },
+        {
+          "file": "images/bg-enamel-chalk.bin",
+          "name": "BG_ENAMEL",
+          "type": "raw",
+          "targetPlatforms": [
+            "chalk"
+          ]
+        },
+        {
+          "file": "images/bg-enamel-emery.bin",
+          "name": "BG_ENAMEL",
+          "type": "raw",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "file": "images/bg-enamel-gabbro.bin",
+          "name": "BG_ENAMEL",
+          "type": "raw",
+          "targetPlatforms": [
+            "gabbro"
+          ]
+        },
+        {
+          "file": "images/bg-textured.bin",
+          "name": "BG_TEXTURED",
+          "type": "raw",
+          "targetPlatforms": [
+            "basalt",
+            "chalk",
+            "emery",
             "gabbro"
           ]
         }
