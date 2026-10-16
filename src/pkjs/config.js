@@ -203,7 +203,7 @@ module.exports = [
               "value": 6
             },
             { 
-              "label": "Battery level (12 = full, 6 = half)",
+              "label": "Battery level (12 o'clock = full, 9 = 75%, 6 = 50%, 3 = 25%)",
               "value": 4 
             },
             { 
@@ -356,7 +356,7 @@ module.exports = [
       {
         "type": "input",
         "messageKey": "LocationQuery",
-        "label": "Location",
+        "label": "Location: you may have to wait a few seconds for list to appear",
         "description": "Start typing a city, place name or postcode/zipcode... Leave blank to use GPS location. Location search data uses ©OpenStreetMap.",
         "attributes": {
           "placeholder": "e.g. London, UK (leave empty to use GPS)"
@@ -462,7 +462,7 @@ module.exports = [
         "options": [
           { "label": "Flat colour", "value": "0" },
           { "label": "Painted Rainbow", "value": "1" },
-          { "label": "Rose Rainbow", "value": "2" },
+          { "label": "Rose", "value": "2" },
           { "label": "Sunburst", "value": "3" },
           { "label": "Hammered", "value": "4" },
           { "label": "Fumé", "value": "6" },
@@ -471,7 +471,7 @@ module.exports = [
         ]
       },
       // Background picture colours. Which of these show, and what they're called, depends on
-      // the background picked (modifications.js): painted rainbow 7, rose 4, sunburst 3,
+      // the background picked (modifications.js): painted rainbow 7, rose 4, sunburst 2 (main, shadow),
       // fume 1, the others 2.
       // Picking a background resets them to that background's own colours.
       {
@@ -514,7 +514,19 @@ module.exports = [
         "type": "color",
         "messageKey": "PicColor7",
         "label": "Background colour 7",
-        "defaultValue": "FF00FF"
+        "defaultValue": "FF00AA"
+      },
+      {
+        "type": "button",
+        "id": "PIC_COLOURS_RESET",
+        "defaultValue": "Reset background colours"
+      },
+      // Phone-only: the colours last used with each background, so going back to a background
+      // brings its colours back (modifications.js). Never sent to the watch (index.js).
+      {
+        "type": "input",
+        "messageKey": "PicColorMemory",
+        "defaultValue": ""
       },
       {
         "type": "radiogroup",

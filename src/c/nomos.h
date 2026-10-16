@@ -87,7 +87,7 @@ typedef struct ClaySettings {
   GColor HourHandColor;
   GColor BWHourHandColor;
   // Background picture colours (colour watches): painted rainbow 7 stops, rose 4, sunburst
-  // main/highlight/shadow, fume 1, the other finishes main/highlight. Added after the hour hand colours (see above).
+  // main/shadow, fume 1, the other finishes main/highlight. Added after the hour hand colours (see above).
   GColor PicColor1;
   GColor PicColor2;
   GColor PicColor3;

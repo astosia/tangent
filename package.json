@@ -1,7 +1,7 @@
 {
   "name": "tangent",
   "author": "astosia",
-  "version": "4.3.0",
+  "version": "4.8.0",
   "keywords": [
     "pebble",
     "watchface",
@@ -125,7 +125,8 @@
       "PicColor4",
       "PicColor5",
       "PicColor6",
-      "PicColor7"
+      "PicColor7",
+      "PicColorMemory"
     ],
     "resources": {
       "media": [
@@ -420,13 +421,34 @@
           ]
         },
         {
-          "file": "images/bg-textured.bin",
+          "file": "images/bg-textured-basalt.bin",
           "name": "BG_TEXTURED",
           "type": "raw",
           "targetPlatforms": [
-            "basalt",
-            "chalk",
-            "emery",
+            "basalt"
+          ]
+        },
+        {
+          "file": "images/bg-textured-chalk.bin",
+          "name": "BG_TEXTURED",
+          "type": "raw",
+          "targetPlatforms": [
+            "chalk"
+          ]
+        },
+        {
+          "file": "images/bg-textured-emery.bin",
+          "name": "BG_TEXTURED",
+          "type": "raw",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "file": "images/bg-textured-gabbro.bin",
+          "name": "BG_TEXTURED",
+          "type": "raw",
+          "targetPlatforms": [
             "gabbro"
           ]
         }

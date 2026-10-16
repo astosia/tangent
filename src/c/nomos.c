@@ -2070,9 +2070,12 @@ static void draw_hand_center(GContext *ctx, GColor outer_color, GColor inner_col
 
 
 static void draw_major_tick (GContext *ctx, int angle, int length, GColor fill_color, GColor border_color) {
-  GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
   #ifdef PBL_RECT
+  GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
   GRect full_bounds = layer_get_bounds (s_canvas_layer);
+  #else
+  GRect bounds = layer_get_bounds (s_canvas_layer);
+  GRect full_bounds = bounds;
   #endif
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
       GPoint p1;
@@ -2104,9 +2107,12 @@ static void draw_major_tick (GContext *ctx, int angle, int length, GColor fill_c
 }
 
 static void draw_major_tick_inner_set (GContext *ctx, int angle, int length, GColor fill_color, GColor border_color) {
-  GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
   #ifdef PBL_RECT
+  GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
   GRect full_bounds = layer_get_bounds (s_canvas_layer);
+  #else
+  GRect bounds = layer_get_bounds (s_canvas_layer);
+  GRect full_bounds = bounds;
   #endif
   
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
@@ -2139,10 +2145,12 @@ static void draw_major_tick_inner_set (GContext *ctx, int angle, int length, GCo
 }
 
 static void draw_minor_tick(GContext *ctx, int angle, GColor border_color) {
-  GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
-
   #ifdef PBL_RECT
-   GRect full_bounds = layer_get_bounds (s_canvas_layer);
+  GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
+  GRect full_bounds = layer_get_bounds (s_canvas_layer);
+  #else
+  GRect bounds = layer_get_bounds (s_canvas_layer);
+  GRect full_bounds = bounds;
   #endif
 
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
@@ -2353,7 +2361,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
        for (int i = 1; i < 13; i++) {
         if (i % 2 == 0){
           fctx_begin_fill(&fctx);
-          fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
+          fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h)) : config.font_size_digits* PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h));
           fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
           char digit_string[6];
           int32_t digit_angle = i * 30 ;
@@ -2367,7 +2375,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                 digit_rotation = digit_angle_trig + TRIG_MAX_ANGLE / 2;
               }
 
-          fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
+          fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h)) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h)) - config.digit_inset );
         
           get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
           FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
@@ -2384,7 +2392,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
          for (int i = 1; i < 13; i++) {
         if (i % 2 == 0 && i != 6){
           fctx_begin_fill(&fctx);
-          fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
+          fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h)) : config.font_size_digits* PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h));
           fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
           char digit_string[6];
           int32_t digit_angle = i * 30 ;
@@ -2398,7 +2406,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                 digit_rotation = digit_angle_trig + TRIG_MAX_ANGLE / 2;
               }
 
-          fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
+          fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h)) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h)) - config.digit_inset );
         
           get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
           FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
@@ -2424,7 +2432,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
     FPoint fulldate_pos;
 
-    int font_size_date = config.font_size_date * bounds.size.h/full_bounds.size.h;
+    int font_size_date = config.font_size_date * PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h);
 
     int yOffset = config.yOffset;
     int yOffsetFctx = config.yOffsetFctx;
@@ -2502,7 +2510,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
             fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
             FPoint battery_pos;
             
-            int font_size_battery = config.font_size_battery * bounds.size.h/full_bounds.size.h;
+            int font_size_battery = config.font_size_battery * PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h);
             
             int s_battery_level = battery_state_service_peek().charge_percent;
             fctx_begin_fill(&fctx);
@@ -2512,7 +2520,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
               if (settings.EnableBatteryLine) {
 
                   battery_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 1));
-                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* bounds.size.h/full_bounds.size.h);
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h));
 
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
@@ -2524,7 +2532,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                 else { //shift the percentage text slightly when there's no battery line
 
                   battery_pos.x = INT_TO_FIXED((bounds.size.w / 2) );
-                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y)* bounds.size.h/full_bounds.size.h);
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y)* PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h));
 
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
@@ -2541,7 +2549,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
             fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
             FPoint battery_pos;
             
-            int font_size_battery = config.font_size_battery * bounds.size.h/full_bounds.size.h;
+            int font_size_battery = config.font_size_battery * PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h);
             
             int s_battery_level = battery_state_service_peek().charge_percent;
             fctx_begin_fill(&fctx);
@@ -2551,7 +2559,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
               if (settings.EnableBatteryLine) {
 
                   battery_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 1));
-                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* bounds.size.h/full_bounds.size.h);
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h);
 
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
@@ -2563,7 +2571,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                 else { //shift the percentage text slightly when there's no battery line
 
                   battery_pos.x = INT_TO_FIXED((bounds.size.w / 2) );
-                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y)* bounds.size.h/full_bounds.size.h);
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y)* PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h));
 
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
@@ -2748,10 +2756,10 @@ static void layer_update_proc_battery_line(Layer *layer, GContext *ctx) {
     // Draw battery line
    
     if (settings.EnableBatteryLine) {
-        int width_rect = (s_battery_level * config.battery_line) / 100 * bounds.size.h/full_bounds.size.h;
+        int width_rect = (s_battery_level * config.battery_line) / 100 * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h);
         int rect_x_pos = (bounds.size.w/2) - (width_rect/2);
 
-        GRect BatteryLineRect = GRect(rect_x_pos,config.BatteryLineYOffset * bounds.size.h/full_bounds.size.h,width_rect, 2);
+        GRect BatteryLineRect = GRect(rect_x_pos,config.BatteryLineYOffset * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h),width_rect, 2);
         graphics_context_set_antialiased(ctx, true);
         graphics_context_set_fill_color(ctx, PBL_IF_BW_ELSE(settings.BWMinHandBatLineColor, settings.BatteryLineColor));
         graphics_fill_rect(ctx,BatteryLineRect, 1, GCornersBottom);
@@ -2810,8 +2818,13 @@ static void layer_update_proc_qt(Layer * layer, GContext * ctx){
 // Update procedure for the main canvas layer (hour & minute hands)
 static void hour_min_hands_canvas_update_proc(Layer *layer, GContext *ctx) {
 
- GRect bounds = layer_get_unobstructed_bounds(layer);
- GRect full_bounds = layer_get_bounds(layer);
+  #ifdef PBL_RECT
+  GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
+  GRect full_bounds = layer_get_bounds (s_canvas_layer);
+  #else
+  GRect bounds = layer_get_bounds (s_canvas_layer);
+  GRect full_bounds = bounds;
+  #endif
 
 
 #ifdef BACKLIGHTON
@@ -2900,8 +2913,13 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
       return;
     }
   
-    GRect bounds = layer_get_unobstructed_bounds(layer);
-    GRect full_bounds = layer_get_bounds(layer);
+  #ifdef PBL_RECT
+  GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
+  GRect full_bounds = layer_get_bounds (s_canvas_layer);
+  #else
+  GRect bounds = layer_get_bounds (s_canvas_layer);
+  GRect full_bounds = bounds;
+  #endif
 
     if (!grect_equal(&full_bounds, &bounds)) {
       return;
@@ -3073,13 +3091,13 @@ static uint32_t prv_picture_resource(int style) {
 #define PICTURE_STOPS 7
 static const uint8_t PICTURE_DEFAULT_COLOURS[10][PICTURE_STOPS] = {
   { 0xFC, 0xCF, 0xF3, 0xC3, 0xC3, 0xC3, 0xC3 },   // 0 flat (unused): same as the rose
-  { 0xF0, 0xF4, 0xFC, 0xC9, 0xC7, 0xC2, 0xF3 },   // 1 painted: red, orange, yellow, green, blue, navy, magenta
+  { 0xF0, 0xF4, 0xFC, 0xC9, 0xC7, 0xC2, 0xF2 },   // 1 painted: red, orange, yellow, green, blue, navy, pink
   { 0xFC, 0xCF, 0xF3, 0xC3, 0xC3, 0xC3, 0xC3 },   // 2 rose: top yellow, 9 o'clock cyan, 3 o'clock magenta, bottom blue
-  { 0xC6, 0xDB, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1 },   // 3 sunburst: cobalt, sky blue, shadow navy
+  { 0xDF, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1 },   // 3 sunburst: aqua, shadow navy
   { 0xC7, 0xDB, 0xDB, 0xDB, 0xDB, 0xDB, 0xDB },   // 4 hammered: blue, sky blue
   { 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA },   // 5 (wave, removed)
   { 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA },   // 6 fume: light grey
-  { 0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF },   // 7 enamel: cream, white
+  { 0xDC, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF },   // 7 enamel: bright green, white
   { 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA },   // 8 (lacquer, removed)
   { 0xEA, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF },   // 9 textured: light grey, white
 };
@@ -3159,9 +3177,10 @@ static bool prv_build_picture_lut(uint8_t (*lut)[3], int style, ResHandle handle
     prv_pic_rgb(settings.PicColor1), prv_pic_rgb(settings.PicColor2), prv_pic_rgb(settings.PicColor3),
     prv_pic_rgb(settings.PicColor4), prv_pic_rgb(settings.PicColor5), prv_pic_rgb(settings.PicColor6),
     prv_pic_rgb(settings.PicColor7) };
-  // finishes ramp shadow -> main -> highlight; the shadow is black, except sunburst's colour 3
+  // finishes ramp shadow -> main -> highlight; the shadow is black, except for sunburst, whose
+  // colour 2 is its shadow (it only runs shadow -> main)
   PicRGB shadow = { 0, 0, 0 };
-  if (style == 3) { shadow = stops[2]; }
+  if (style == 3) { shadow = stops[1]; }
   uint8_t chunk[48];   // rainbow table, read 16 entries at a time
   for (int b = 0; b < 256; b++) {
     PicRGB c;

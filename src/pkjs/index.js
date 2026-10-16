@@ -25,7 +25,7 @@ var hasWeather = true;
 // but sending them would only use up AppMessage space.
 var PHONE_ONLY_KEYS = [
     'APIKEY_User', 'WeatherProv', 'Lat', 'Long', 'LocationQuery', 'WeatherUnit',
-    'TZ_ID', 'TZ_ID_STATE', 'PreviewPlatformOverride'
+    'TZ_ID', 'TZ_ID_STATE', 'PreviewPlatformOverride', 'PicColorMemory'
 ];
 
 // Keys that only matter on colour watches. To minimise the number of keys sent to
