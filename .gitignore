@@ -16,3 +16,5 @@ package-lock.json
 # Ignore tools & screenshots
 tools/
 screenshots/
+
+*Zone.Identifier

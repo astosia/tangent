@@ -1,7 +1,7 @@
 {
   "name": "tangent",
   "author": "astosia",
-  "version": "4.3.0",
+  "version": "4.6.0",
   "keywords": [
     "pebble",
     "watchface",
@@ -114,7 +114,11 @@
       "ShakeToRefreshWeather",
       "BackgroundStyle",
       "BatteryWeatherColor",
-      "BWBatteryWeatherColor"
+      "BWBatteryWeatherColor",
+      "ShakeToParkHands",
+      "ParkHandsSeconds",
+      "HourHandColor",
+      "BWHourHandColor"
     ],
     "resources": {
       "media": [
@@ -136,7 +140,7 @@
         },
         {
           "file": "fonts/Tangent-Regular.ttf",
-          "name": "FONT_DATE_18",
+          "name": "FONT_DATE_20",
           "targetPlatforms": [
             "aplite"
           ],
@@ -160,7 +164,7 @@
         },
         {
           "file": "fonts/Tangent-Regular.ttf",
-          "name": "FONT_DATE_30",
+          "name": "FONT_DATE_28",
           "targetPlatforms": [
             "aplite"
           ],
@@ -204,65 +208,78 @@
           "type": "font"
         },
         {
-          "file": "images/picture1-basalt.png",
+          "file": "fonts/WeatherIcons-RegularMod.ttf",
+          "characterRegex": "[]",
+          "name": "FONT_WEATHERICONS_16",
+          "targetPlatforms": [
+            "aplite",
+            "basalt",
+            "chalk",
+            "diorite",
+            "flint"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "images/picture1-basalt.bin",
           "name": "IMAGE_PICTURE1",
-          "type": "bitmap",
+          "type": "raw",
           "targetPlatforms": [
             "basalt"
           ]
         },
         {
-          "file": "images/picture1-chalk.png",
+          "file": "images/picture1-chalk.bin",
           "name": "IMAGE_PICTURE1",
-          "type": "bitmap",
+          "type": "raw",
           "targetPlatforms": [
             "chalk"
           ]
         },
         {
-          "file": "images/picture1-emery.png",
+          "file": "images/picture1-emery.bin",
           "name": "IMAGE_PICTURE1",
-          "type": "bitmap",
+          "type": "raw",
           "targetPlatforms": [
             "emery"
           ]
         },
         {
-          "file": "images/picture1-gabbro.png",
+          "file": "images/picture1-gabbro.bin",
           "name": "IMAGE_PICTURE1",
-          "type": "bitmap",
+          "type": "raw",
           "targetPlatforms": [
             "gabbro"
           ]
         },
         {
-          "file": "images/picture2-basalt.png",
+          "file": "images/picture2-basalt.bin",
           "name": "IMAGE_PICTURE2",
-          "type": "bitmap",
+          "type": "raw",
           "targetPlatforms": [
             "basalt"
           ]
         },
         {
-          "file": "images/picture2-chalk.png",
+          "file": "images/picture2-chalk.bin",
           "name": "IMAGE_PICTURE2",
-          "type": "bitmap",
+          "type": "raw",
           "targetPlatforms": [
             "chalk"
           ]
         },
         {
-          "file": "images/picture2-emery.png",
+          "file": "images/picture2-emery.bin",
           "name": "IMAGE_PICTURE2",
-          "type": "bitmap",
+          "type": "raw",
           "targetPlatforms": [
             "emery"
           ]
         },
         {
-          "file": "images/picture2-gabbro.png",
+          "file": "images/picture2-gabbro.bin",
           "name": "IMAGE_PICTURE2",
-          "type": "bitmap",
+          "type": "raw",
           "targetPlatforms": [
             "gabbro"
           ]

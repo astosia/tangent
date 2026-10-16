@@ -453,49 +453,107 @@ function fetchOpenWeatherMap(lat, lon, apiKey, useFahrenheit) {
         '&appid=' + apiKey;
 
     return xhrGetJSON(encodeURI(url)).then(function(json) {
-        var temp = Math.round(json.current.temp);
-        var iconSuffix = json.current.weather[0].icon.slice(-1); // 'd' or 'n'
-        var icon = iconFromOWM(json.current.weather[0].id, iconSuffix);
-
-        // daily[0] is today.
-        var high = Math.round(json.daily[0].temp.max);
-        var low = Math.round(json.daily[0].temp.min);
-
-        // hourly[0] is the current hour, hourly[1] is the next hour
-        // `pop` is probability of precipitation as a 0-1 fraction, so *100 to get same value as Open-Meteo.
-        // `rain['1h']` is only present in the response when rain is actually forecast for that hour.
+        // daily[0] is today; hourly[0] is the current hour, hourly[1] the next hour.
         var hourly = json.hourly || [];
-        var rainChance = hourly[1] ? Math.round((hourly[1].pop || 0) * 100) : 0;
-        var rainAmountMm = (hourly[1] && hourly[1].rain && hourly[1].rain['1h']) || 0;
-
-        // WBGT needs Celsius/m-s regardless of the display unit, and 'units'
-        // only affects temp/wind fields, not humidity - json.current.humidity
-        // is always a plain 0-100 relative humidity percentage from OWM.
-        var tempC = useFahrenheit ? (json.current.temp - 32) * 5 / 9 : json.current.temp;
-        var humidity = json.current.humidity;
-        var windMps = useFahrenheit ? (json.current.wind_speed || 0) * 0.44704 : (json.current.wind_speed || 0);
-        var pressureHPa = json.current.pressure;
-
-        // OWM's One Call doesn't give shortwave radiation at all, so
-        // estimate it: Kasten-Czeplak clear-sky GHI from the sun's position,
-        // knocked down for cloud cover (clouds 0-100%), then split into
-        // direct/diffuse by the same cloud fraction. See the comments above
-        // kastenCzeplakClearSkyWpm2/estimateDirectDiffuseFraction for the
-        // accuracy trade-off this involves vs Open-Meteo's measured fields.
-        var cosZenith = cosSolarZenith(lat, lon, new Date());
-        var cloudPercent = (json.current.clouds !== undefined) ? json.current.clouds : 50;
-        var clearSkyWpm2 = kastenCzeplakClearSkyWpm2(cosZenith);
-        var solarWpm2 = kastenCzeplakCloudAttenuation(clearSkyWpm2, cloudPercent);
-        var split = estimateDirectDiffuseFraction(cloudPercent);
-
-        var wbgtC = calcWBGTLiljegren(tempC, humidity, windMps, solarWpm2, split.fdb, split.fdif, cosZenith, pressureHPa);
-        var wbgtLevel = wbgtLevelFromCelsius(wbgtC);
-
-        return {
-            icon: icon, temp: temp, high: high, low: low,
-            rainChance: rainChance, rainAmountMm: rainAmountMm, wbgtLevel: wbgtLevel
-        };
+        return owmResult(json.current, json.daily[0], hourly[1], lat, lon, useFahrenheit);
     });
+}
+
+// One Call 4.0 (launched June 2026). Same data as 3.0, but split across separate endpoints,
+// so this makes three requests per refresh - current conditions, the hourly timeline (for
+// the next hour's rain) and the daily timeline (for today's high/low) - and each counts as
+// one call against the account's daily allowance. Like 3.0 it needs its own subscription:
+// a key subscribed to One Call 3.0 isn't automatically subscribed to 4.0 (a 401 otherwise).
+// Docs: https://openweathermap.org/api/one-call-4
+function fetchOpenWeatherMap4(lat, lon, apiKey, useFahrenheit) {
+    var units = useFahrenheit ? 'imperial' : 'metric';
+    var base = 'https://api.openweathermap.org/data/4.0/onecall/';
+    var query = '?lat=' + lat + '&lon=' + lon + '&units=' + units + '&appid=' + apiKey;
+
+    return Promise.all([
+        xhrGetJSON(encodeURI(base + 'current' + query)),
+        xhrGetJSON(encodeURI(base + 'timeline/1h' + query)),
+        xhrGetJSON(encodeURI(base + 'timeline/1day' + query))
+    ]).then(function(responses) {
+        var current = firstRecord(responses[0].data);
+        var hours = asArray(responses[1].data);
+        var days = asArray(responses[2].data);
+        var now = Date.now() / 1000;
+
+        // The timelines start at the current time by default. The next hour is the first
+        // record that starts after now (3.0's hourly[1]); today is the first daily record
+        // whose local date (using the response's timezone_offset) is today's.
+        var nextHour = null;
+        for (var i = 0; i < hours.length; i++) {
+            if (hours[i].dt > now) { nextHour = hours[i]; break; }
+        }
+        var offset = responses[2].timezone_offset || 0;
+        var todayLocal = Math.floor((now + offset) / 86400);
+        var today = null;
+        for (var j = 0; j < days.length; j++) {
+            if (Math.floor((days[j].dt + offset) / 86400) === todayLocal) { today = days[j]; break; }
+        }
+
+        if (!current || !current.weather || !current.weather[0]) {
+            throw new Error('One Call 4.0: no current conditions in the response');
+        }
+        return owmResult(current, today || days[0] || null, nextHour, lat, lon, useFahrenheit);
+    });
+}
+
+function asArray(data) {
+    if (!data) return [];
+    return Array.isArray(data) ? data : [data];
+}
+
+function firstRecord(data) {
+    return asArray(data)[0] || null;
+}
+
+// Builds the provider result from OpenWeatherMap records, which have the same fields in
+// One Call 3.0 and 4.0: `current` (conditions now), `today` (a daily record, for the high and
+// low) and `nextHour` (an hourly record, for rain in the next hour). If today's record is
+// missing the current temperature stands in for the high/low; no next hour means no rain alert.
+function owmResult(current, today, nextHour, lat, lon, useFahrenheit) {
+    var temp = Math.round(current.temp);
+    var iconSuffix = current.weather[0].icon.slice(-1); // 'd' or 'n'
+    var icon = iconFromOWM(current.weather[0].id, iconSuffix);
+
+    var high = today && today.temp ? Math.round(today.temp.max) : temp;
+    var low = today && today.temp ? Math.round(today.temp.min) : temp;
+
+    // `pop` is probability of precipitation as a 0-1 fraction, so *100 to get same value as Open-Meteo.
+    // `rain['1h']` is only present in the response when rain is actually forecast for that hour.
+    var rainChance = nextHour ? Math.round((nextHour.pop || 0) * 100) : 0;
+    var rainAmountMm = (nextHour && nextHour.rain && nextHour.rain['1h']) || 0;
+
+    // WBGT needs Celsius/m-s regardless of the display unit, and 'units'
+    // only affects temp/wind fields, not humidity - current.humidity
+    // is always a plain 0-100 relative humidity percentage from OWM.
+    var tempC = useFahrenheit ? (current.temp - 32) * 5 / 9 : current.temp;
+    var humidity = current.humidity;
+    var windMps = useFahrenheit ? (current.wind_speed || 0) * 0.44704 : (current.wind_speed || 0);
+    var pressureHPa = current.pressure;
+
+    // OWM's One Call doesn't give shortwave radiation at all, so
+    // estimate it: Kasten-Czeplak clear-sky GHI from the sun's position,
+    // knocked down for cloud cover (clouds 0-100%), then split into
+    // direct/diffuse by the same cloud fraction. See the comments above
+    // kastenCzeplakClearSkyWpm2/estimateDirectDiffuseFraction for the
+    // accuracy trade-off this involves vs Open-Meteo's measured fields.
+    var cosZenith = cosSolarZenith(lat, lon, new Date());
+    var cloudPercent = (current.clouds !== undefined) ? current.clouds : 50;
+    var clearSkyWpm2 = kastenCzeplakClearSkyWpm2(cosZenith);
+    var solarWpm2 = kastenCzeplakCloudAttenuation(clearSkyWpm2, cloudPercent);
+    var split = estimateDirectDiffuseFraction(cloudPercent);
+
+    var wbgtC = calcWBGTLiljegren(tempC, humidity, windMps, solarWpm2, split.fdb, split.fdif, cosZenith, pressureHPa);
+    var wbgtLevel = wbgtLevelFromCelsius(wbgtC);
+
+    return {
+        icon: icon, temp: temp, high: high, low: low,
+        rainChance: rainChance, rainAmountMm: rainAmountMm, wbgtLevel: wbgtLevel
+    };
 }
 
 // ---- Public API ------------------------------------------------------
@@ -505,10 +563,11 @@ function fetchOpenWeatherMap(lat, lon, apiKey, useFahrenheit) {
 // rainAmount indexes the watch's rain-amount icon set and is only meaningful while rainSoon is 1.
 //
 //   UseWeather   (bool)   - master on/off switch
-//   WeatherProv  ('ds' | 'owm') - 'ds' = Open-Meteo, 'owm' = OpenWeatherMap
+//   WeatherProv  ('ds' | 'owm' | 'owm4') - 'ds' = Open-Meteo, 'owm' = OpenWeatherMap One Call 3.0,
+//                'owm4' = OpenWeatherMap One Call 4.0
 //   Lat, Long    (string/number, optional) - manual location, else GPS
 //   WeatherUnit  (bool)   - falsy = Celsius, truthy = Fahrenheit
-//   APIKEY_User  (string) - required only when WeatherProv === 'owm'
+//   APIKEY_User  (string) - required only for the OpenWeatherMap providers
 
 var getWeather = function(settings) {
     var useWeather = settings && settings.UseWeather;
@@ -525,11 +584,13 @@ var getWeather = function(settings) {
     var apiKey = settings.APIKEY_User;
 
     return resolveLocation(lat, lon).then(function(loc) {
-        if (provider === 'owm') {
+        if (provider === 'owm' || provider === 'owm4') {
             if (!apiKey) {
                 return Promise.reject(new Error('OpenWeatherMap selected but no API key set'));
             }
-            return fetchOpenWeatherMap(loc.lat, loc.lon, apiKey, useFahrenheit);
+            return provider === 'owm4'
+                ? fetchOpenWeatherMap4(loc.lat, loc.lon, apiKey, useFahrenheit)
+                : fetchOpenWeatherMap(loc.lat, loc.lon, apiKey, useFahrenheit);
         }
         return fetchOpenMeteo(loc.lat, loc.lon, useFahrenheit);
     }).then(function(result) {

@@ -17,8 +17,9 @@ Object.keys(messageKeys).forEach(function(name) {
 
 var Pebble_platform = (Pebble.getActiveWatchInfo && Pebble.getActiveWatchInfo().platform) || 'aplite';
 var isbw = (Pebble_platform === 'aplite' || Pebble_platform === 'diorite' || Pebble_platform === 'flint');
-// Only these watches show weather (HAS_WEATHER in nomos.c; the weather section of config.js).
-var hasWeather = (Pebble_platform === 'emery' || Pebble_platform === 'gabbro');
+// Watches that show weather (HAS_WEATHER in nomos.c; the weather section of config.js): all of them.
+// Kept as a flag so a platform can easily be left out again.
+var hasWeather = true;
 
 // Keys the watch never reads. Clay needs them (config.js items / weather.js inputs),
 // but sending them would only use up AppMessage space.
@@ -30,11 +31,10 @@ var PHONE_ONLY_KEYS = [
 // Keys that only matter on colour watches. To minimise the number of keys sent to
 // APLITE (and the other B&W watches) these are dropped for isbw platforms.
 var COLOUR_ONLY_KEYS = [
-    'IconNow', 'WeatherTemp', 'TempFore', 'RainSoon', 'WBGTLevel',
     'ThemeSelect', 'BackgroundColor1', 'MinuteHandShadowColor', 'MajorTickColor',
     'MinorTickColor', 'HourDigitsColor', 'MinutesHandColor', 'SecondsHandColor',
     'MonthHandColor', 'SubDialColor', 'DateColor', 'BatteryLineColor', 'BTQTColor',
-    'BackgroundStyle', 'BatteryWeatherColor'
+    'BackgroundStyle', 'BatteryWeatherColor', 'HourHandColor'
 ];
 
 // Removes the named keys from a numeric-keyed settings/message object.
@@ -161,6 +161,14 @@ Pebble.addEventListener('showConfiguration', function(e) {
     // Open the page with this watch's settings rather than the last watch's.
     var settings = settingsForThisWatch();
     if (settings) {
+        // The hour hand got its own colour in 4.3. Until it has been saved once, start its
+        // picker at the minute hand's colour, so saving doesn't suddenly change the hour hand.
+        if (settings.HourHandColor === undefined && settings.MinutesHandColor !== undefined) {
+            settings.HourHandColor = settings.MinutesHandColor;
+        }
+        if (settings.BWHourHandColor === undefined && settings.BWMinHandBatLineColor !== undefined) {
+            settings.BWHourHandColor = settings.BWMinHandBatLineColor;
+        }
         localStorage.setItem('clay-settings', JSON.stringify(settings));
     }
     Pebble.openURL(clay.generateUrl());
@@ -261,7 +269,7 @@ Pebble.addEventListener('webviewclosed', function(e) {
     saveWatchSettings();
 
     var pending = applyTimezone(submitted);
-    if (!isbw) {
+    if (hasWeather) {
         pending = pending.then(applyWeather);
     }
 

@@ -8,10 +8,9 @@
 #include <pebble-fctx/fpath.h>
 #include <pebble-fctx/ffont.h>
 
-// Weather (and the extra layers/fonts/settings it needs) is only built so far for the large-screen platforms
-#if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
-  #define HAS_WEATHER
-#endif
+// Weather (and the extra layers/fonts/settings it needs) is built for every watch. The HAS_WEATHER
+// blocks are kept so it's easy to leave a platform out again (e.g. if aplite runs short of memory).
+#define HAS_WEATHER
 
 #ifndef ARRAY_LENGTH
   #define ARRAY_LENGTH(a) (sizeof(a) / sizeof((a)[0]))
@@ -99,6 +98,19 @@ static AppTimer *s_weather_reconnect_timer = NULL;
                                               // bluetooth_connection_handler below)
 static time_t s_last_manual_weather_request = 0;
 #define WEATHER_MANUAL_REFRESH_COOLDOWN_SEC 60  // don't let repeated shakes spam the phone/API
+// With Shake to Move Hands Aside on too, one shake moves the hands and a second shake within
+// 2 seconds refreshes the weather. Taps closer together than the minimum gap are treated as
+// the same shake (one flick of the wrist can register more than once).
+#define WEATHER_DOUBLE_SHAKE_WINDOW_MS 2000
+#define WEATHER_DOUBLE_SHAKE_MIN_GAP_MS 400
+static int64_t s_last_shake_ms = 0;   // 0 = no first shake waiting for its second
+// Shake to move the hands aside (ShakeToParkHands): while s_hands_parked is true the hour hand
+// points to 9 and the minute hand to 3 - a flat bar across the dial - so they don't cover the
+// weather, for settings.ParkHandsSeconds. Another shake while parked restarts the time.
+static bool s_hands_parked = false;
+static AppTimer *s_park_hands_timer = NULL;
+#define PARK_HANDS_MIN_SECONDS 1
+#define PARK_HANDS_MAX_SECONDS 60
 #endif
 static ClaySettings settings;
 
@@ -158,6 +170,8 @@ typedef struct {
   GRect WarningIconRect[1];
   GRect BTIconRect[1];
   GRect QTIconRect[1];
+  int forecast_offset;     // weather: forecast text this far below the battery text (fctx)
+  int weather_temp_grow;   // weather: current temperature is this much bigger than the battery text
 } UIConfig;
 
 #ifdef PBL_PLATFORM_EMERY
@@ -214,7 +228,9 @@ static const UIConfig config = {
 .RainIconRect = {{{48,81},{40,22}}},
 .WarningIconRect = {{{132,83},{40,22}}},
 .BTIconRect = {{{53,21},{44,20}}},
-.QTIconRect = {{{106,20},{44,20}}}
+.QTIconRect = {{{106,20},{44,20}}},
+.forecast_offset = 28,
+.weather_temp_grow = 6
 };
 #elif defined(PBL_PLATFORM_GABBRO)
 static const UIConfig config = {
@@ -260,7 +276,9 @@ static const UIConfig config = {
 .RainIconRect = {{{75,90},{40,22}}},
 .WarningIconRect = {{{165,91},{40,22}}},
 .BTIconRect = {{{78,23},{44,20}}},
-.QTIconRect = {{{140,22},{44,20}}}
+.QTIconRect = {{{140,22},{44,20}}},
+.forecast_offset = 28,
+.weather_temp_grow = 6
 };
 #elif defined(PBL_BW)
 static const UIConfig config = {
@@ -269,9 +287,9 @@ static const UIConfig config = {
 .yOffsetFctx = 2,
 .yWeekdayDateOffset = 18 - 2,
 .WeekdayDateHeight = 11,
-.BatteryYOffset = 40-4,
-.BatteryLineYOffset = 49 + 6,
-.font_size_digits = 30,
+.BatteryYOffset = 40-4 +4 -3,
+.BatteryLineYOffset = 49 + 6 +4 -3,
+.font_size_digits = 28,   // same as basalt
 .digit_inset = 10,
 .font_size_battery = 16,
 .font_size_date = 18 + 2,
@@ -312,7 +330,15 @@ static const UIConfig config = {
   .battery_arc_bounds = {{{76,48},{24,24}}},        //UV arc, right of centre, middle row
 .romanadjust = 1,
 .BTIconRect = {{{36,16},{36,20}}},
-.QTIconRect = {{{75,16},{36,20}}}
+.QTIconRect = {{{75,16},{36,20}}},
+// Weather, scaled from emery's layout around the battery position; 16px weather icons.
+// aplite draws its temperatures with graphics_draw_text instead of fctx - see weather_update_proc.
+.IconNowRect = {{{0,32},{70,18}}},
+.IconNowRect2 = {{{0,36},{70,18}}},
+.RainIconRect = {{{30,56},{30,18}}},
+.WarningIconRect = {{{97,57},{30,18}}},
+.forecast_offset = 23 -2,
+.weather_temp_grow = 4
 
 };
 #elif defined(PBL_ROUND)
@@ -322,8 +348,8 @@ static const UIConfig config = {
 .yOffsetFctx = 2,
 .yWeekdayDateOffset = 1 + 24 - 4,
 .WeekdayDateHeight = 11,
-.BatteryYOffset = 40-4,
-.BatteryLineYOffset = 49 + 6,
+.BatteryYOffset = 40-4 +4 +2,
+.BatteryLineYOffset = 49 + 6 +4 +2,
 .font_size_digits = 32,
 .digit_inset = 23,
 .font_size_battery = 16,
@@ -355,9 +381,14 @@ static const UIConfig config = {
   .battery_arc_bounds = {{{55,79},{24,24}}},        //UV arc, right of centre, middle row
 .romanadjust = 0,
 .BTIconRect = {{{54,17},{32,20}}},
-.QTIconRect = {{{97,16},{32,20}}}
-
-
+.QTIconRect = {{{97,16},{32,20}}},
+// Weather, scaled from emery's layout around the battery position; 16px weather icons.
+.IconNowRect = {{{0,37},{88,18}}},
+.IconNowRect2 = {{{0,41},{88,18}}},
+.RainIconRect = {{{48,61},{30,18}}},
+.WarningIconRect = {{{115,62},{30,18}}},
+.forecast_offset = 23 -2,   // BatteryYOffset is 2 lower here, so the forecast stays put
+.weather_temp_grow = 4
 };
 #else // Default for other platforms
 static const UIConfig config = {
@@ -366,8 +397,8 @@ static const UIConfig config = {
 .yOffsetFctx = 2,
 .yWeekdayDateOffset = 18 - 2,
 .WeekdayDateHeight = 11,
-.BatteryYOffset = 40-4,
-.BatteryLineYOffset = 49 + 6,
+.BatteryYOffset = 40-4 +4 -3,
+.BatteryLineYOffset = 49 + 6 +4 -3,
 .font_size_digits = 28,
 .digit_inset = 10,
 .font_size_battery = 16,
@@ -409,7 +440,14 @@ static const UIConfig config = {
   .battery_arc_bounds = {{{37,75},{24,24}}},        //UV arc, right of centre, middle row
 .romanadjust = 1,
 .BTIconRect = {{{36,16},{36,20}}},
-.QTIconRect = {{{75,16},{36,20}}}
+.QTIconRect = {{{75,16},{36,20}}},
+// Weather, scaled from emery's layout around the battery position; 16px weather icons.
+.IconNowRect = {{{0,32},{70,18}}},
+.IconNowRect2 = {{{0,36},{70,18}}},
+.RainIconRect = {{{30,56},{30,18}}},
+.WarningIconRect = {{{97,57},{30,18}}},
+.forecast_offset = 23 -2,
+.weather_temp_grow = 4
 };
 #endif
 
@@ -481,6 +519,7 @@ static void prv_default_settings(void) {
   settings.BatteryWeatherColor = GColorYellow;
   settings.HourDigitsColor = GColorYellow;
   settings.MinutesHandColor = GColorWhite;
+  settings.HourHandColor = GColorWhite;
   settings.MajorTickColor = GColorYellow;
   settings.SecondsHandColor = GColorRed;
   settings.MonthHandColor = GColorRed;
@@ -493,6 +532,7 @@ static void prv_default_settings(void) {
   settings.BWSubDialColor = GColorBlack;
   settings.BWMinuteHandShadowColor = GColorDarkGray;
   settings.BWMinHandBatLineColor = GColorWhite;
+  settings.BWHourHandColor = GColorWhite;
   settings.BWHourDigitsColor = GColorWhite;
   settings.BWMajorTickColor = GColorWhite;
   settings.BTQTColor = GColorPictonBlue;
@@ -536,6 +576,8 @@ static void prv_default_settings(void) {
   settings.WBGTLevel = 0;
   settings.RefreshWeatherOnLaunch = false;
   settings.ShakeToRefreshWeather = true;
+  settings.ShakeToParkHands = false;
+  settings.ParkHandsSeconds = 5;
   settings.ShowForecast = true;
   settings.ShowCurrent = true;
   settings.ShowAlert = true;
@@ -635,6 +677,14 @@ static void timeout_handler(void *context) {
 
 }
 
+#ifdef HAS_WEATHER
+static void prv_unpark_hands_callback(void *data) {
+  s_park_hands_timer = NULL;
+  s_hands_parked = false;
+  layer_mark_dirty(s_canvas_layer);
+}
+#endif
+
 static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
    if (ignore_next_tap) {
        ignore_next_tap = false; // Reset the flag for the next tap
@@ -644,12 +694,38 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
   #ifdef HAS_WEATHER
   // Enables manual "refresh weather now" - useful right after regaining signal, without needing to open settings or wait for the next scheduled refresh. 
   //Cooldown-limited (once per minute) so arm movement can't repeatedly call the weather API.
-  if (settings.UseWeather && settings.ShakeToRefreshWeather) {
+  bool refresh_on_this_shake = true;
+  if (settings.UseWeather && settings.ShakeToRefreshWeather && settings.ShakeToParkHands) {
+    time_t shake_sec;
+    uint16_t shake_ms;
+    time_ms(&shake_sec, &shake_ms);
+    int64_t now_ms = (int64_t)shake_sec * 1000 + shake_ms;
+    int64_t gap = now_ms - s_last_shake_ms;
+    if (s_last_shake_ms != 0 && gap < WEATHER_DOUBLE_SHAKE_MIN_GAP_MS) {
+      refresh_on_this_shake = false;            // same shake registering twice: ignore
+    } else if (s_last_shake_ms != 0 && gap <= WEATHER_DOUBLE_SHAKE_WINDOW_MS) {
+      s_last_shake_ms = 0;                      // the second shake: refresh, and start over
+    } else {
+      s_last_shake_ms = now_ms;                 // a first shake: just move the hands
+      refresh_on_this_shake = false;
+    }
+  }
+  if (settings.UseWeather && settings.ShakeToRefreshWeather && refresh_on_this_shake) {
     time_t now = time(NULL);
     if (s_last_manual_weather_request == 0 || (now - s_last_manual_weather_request) >= WEATHER_MANUAL_REFRESH_COOLDOWN_SEC) {
       s_last_manual_weather_request = now;
       prv_request_weather_update();
     }
+  }
+
+  // Move the hands aside for ParkHandsSeconds so the weather can be read
+  if (settings.UseWeather && settings.ShakeToParkHands) {
+    int park_seconds = settings.ParkHandsSeconds;
+    if (park_seconds < PARK_HANDS_MIN_SECONDS || park_seconds > PARK_HANDS_MAX_SECONDS) { park_seconds = 5; }
+    s_hands_parked = true;
+    if (s_park_hands_timer) { app_timer_cancel(s_park_hands_timer); }
+    s_park_hands_timer = app_timer_register(park_seconds * 1000, prv_unpark_hands_callback, NULL);
+    layer_mark_dirty(s_canvas_layer);
   }
   #endif
 
@@ -683,7 +759,7 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
 static void prv_update_accel_tap_subscription(void) {
   bool need_accel_tap = (settings.SubDialChoice == 2 || settings.SubDialChoice == 6);
   #ifdef HAS_WEATHER
-  need_accel_tap = need_accel_tap || (settings.UseWeather && settings.ShakeToRefreshWeather);
+  need_accel_tap = need_accel_tap || (settings.UseWeather && (settings.ShakeToRefreshWeather || settings.ShakeToParkHands));
   #endif
 
   if (need_accel_tap) {
@@ -797,7 +873,13 @@ static void bluetooth_connection_handler(bool connected) {
 // Load settings from persistent storage
 static void prv_load_settings(void) {
   prv_default_settings();
-  persist_read_data(SETTINGS_KEY, &settings, sizeof(settings));
+  int bytes_read = persist_read_data(SETTINGS_KEY, &settings, sizeof(settings));
+  if (bytes_read < (int)sizeof(settings)) {
+    // Saved by a version before the hour hand had its own colour (or nothing saved yet): the
+    // hour hand keeps matching the minute hand until the colour is changed in settings.
+    settings.HourHandColor = settings.MinutesHandColor;
+    settings.BWHourHandColor = settings.BWMinHandBatLineColor;
+  }
 
   #ifdef HAS_WEATHER
   if (persist_exists(WEATHER_FETCH_EPOCH_KEY)) {
@@ -847,6 +929,7 @@ static void apply_bw_theme(GColor fg, GColor bg, Tuple *shadow_t) {
   settings.BWSecondsHandColor = fg;
   settings.BWMonthHandColor = fg;
   settings.BWMinHandBatLineColor = fg;
+  settings.BWHourHandColor = fg;
   settings.BWHourDigitsColor = fg;
   settings.BWMajorTickColor = fg;
   settings.BWBTQTColor = fg;
@@ -864,6 +947,7 @@ typedef struct {
   GColor btqt;          // bluetooth / quiet-time icons
 } ColourTheme;
 
+#ifdef PBL_COLOR   // B&W watches use apply_bw_theme; the phone never sends them ThemeSelect
 static const ColourTheme COLOUR_THEMES[] = {
   { "wh", GColorWhite,     GColorBabyBlueEyes,   GColorBlack,           GColorBlack,                 GColorCobaltBlue,            GColorOrange,        GColorOrange,        GColorDarkGray },
   { "bl", GColorBlack,     GColorDarkGray,       GColorDarkGray,        GColorYellow,                GColorWhite,                 GColorWhite,         GColorYellow,        GColorLightGray },
@@ -891,6 +975,7 @@ static bool apply_colour_theme(const char *id, Tuple *shadow_t) {
     settings.HourDigitsColor = t->text;
     settings.MajorTickColor = t->text;
     settings.MinutesHandColor = t->minutes_hand;
+    settings.HourHandColor = t->minutes_hand;
     settings.SecondsHandColor = t->accent;
     settings.MonthHandColor = t->accent;
     settings.BatteryLineColor = t->battery_line;
@@ -899,6 +984,7 @@ static bool apply_colour_theme(const char *id, Tuple *shadow_t) {
   }
   return false;
 }
+#endif
 
 // AppMessage inbox handler
 static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) {
@@ -914,35 +1000,22 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   Tuple *always_sub_t = dict_find(iter, MESSAGE_KEY_AlwaysShowSubDial);
   Tuple *enable_secondsvisible_t = dict_find(iter, MESSAGE_KEY_SecondsVisibleTime);
-  Tuple *seconds_color_t = dict_find(iter, MESSAGE_KEY_SecondsHandColor);
   Tuple *bwseconds_color_t = dict_find(iter, MESSAGE_KEY_BWSecondsHandColor);
-  Tuple *monthhand_color_t = dict_find(iter, MESSAGE_KEY_MonthHandColor);
   Tuple *bwmonthhand_color_t = dict_find(iter, MESSAGE_KEY_BWMonthHandColor);
   Tuple *enable_date_t = dict_find(iter, MESSAGE_KEY_EnableDate);
   Tuple *enable_battery_t = dict_find(iter, MESSAGE_KEY_EnableBattery);
   Tuple *enable_battery_line_t = dict_find(iter, MESSAGE_KEY_EnableBatteryLine);
   Tuple *bwthemeselect_t = dict_find(iter, MESSAGE_KEY_BWThemeSelect);
-  Tuple *themeselect_t = dict_find(iter, MESSAGE_KEY_ThemeSelect);
-  Tuple *bg_color1_t = dict_find(iter, MESSAGE_KEY_BackgroundColor1);
-  Tuple *bg_color2_t = dict_find(iter, MESSAGE_KEY_MinuteHandShadowColor);
-  Tuple *text_color2_t = dict_find(iter, MESSAGE_KEY_MinorTickColor);
-  Tuple *date_color_t = dict_find(iter, MESSAGE_KEY_DateColor);
   Tuple *bwdate_color_t = dict_find(iter, MESSAGE_KEY_BWDateColor);
-  Tuple *batweather_color_t = dict_find(iter, MESSAGE_KEY_BatteryWeatherColor);
   Tuple *bwbatweather_color_t = dict_find(iter, MESSAGE_KEY_BWBatteryWeatherColor);
-  Tuple *hours_color_t = dict_find(iter, MESSAGE_KEY_HourDigitsColor);
-  Tuple *minutes_color_t = dict_find(iter, MESSAGE_KEY_MinutesHandColor);
-  Tuple *tick_color_t = dict_find(iter, MESSAGE_KEY_MajorTickColor);
-  Tuple *battery_line_color_t = dict_find(iter, MESSAGE_KEY_BatteryLineColor);
   Tuple *bwbg_color1_t = dict_find(iter, MESSAGE_KEY_BWBackgroundColor1);
   Tuple *bwbg_color2_t = dict_find(iter, MESSAGE_KEY_BWMinuteHandShadowColor);
   Tuple *bwtext_color1_t = dict_find(iter, MESSAGE_KEY_BWMinHandBatLineColor);
+  Tuple *bwhourhand_color_t = dict_find(iter, MESSAGE_KEY_BWHourHandColor);
   Tuple *bwtext_color2_t = dict_find(iter, MESSAGE_KEY_BWHourDigitsColor);
   Tuple *bwtext_color3_t = dict_find(iter, MESSAGE_KEY_BWMajorTickColor);
-  Tuple *btqt_color_t = dict_find(iter, MESSAGE_KEY_BTQTColor);
   Tuple *bwbtqt_color_t = dict_find(iter, MESSAGE_KEY_BWBTQTColor);
   Tuple *bwshadowon_t = dict_find(iter, MESSAGE_KEY_BWShadowOn);
-  Tuple *shadowon_t = dict_find(iter, MESSAGE_KEY_ShadowOn);
   Tuple *majort_t = dict_find(iter, MESSAGE_KEY_showMajorTick);
   Tuple *minort_t = dict_find(iter, MESSAGE_KEY_showMinorTick);
   Tuple *fg_shape_t = dict_find(iter, MESSAGE_KEY_ForegroundShape);
@@ -954,7 +1027,6 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *back_t = dict_find(iter, MESSAGE_KEY_BackSize);
   Tuple *backlen_t = dict_find(iter, MESSAGE_KEY_BackLen);
 
-  Tuple *subdial_t = dict_find(iter, MESSAGE_KEY_SubDialColor);
   Tuple *bwsubdial_t = dict_find(iter, MESSAGE_KEY_BWSubDialColor);
   Tuple *roman_t = dict_find(iter, MESSAGE_KEY_Roman);
   Tuple *hourticksonly_t = dict_find(iter, MESSAGE_KEY_HourTicksOnly);
@@ -962,6 +1034,24 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *bgstyle_t = dict_find(iter, MESSAGE_KEY_BackgroundStyle);
   #endif
 
+  #ifdef PBL_COLOR   // colour-theme keys: the phone only sends these to colour watches
+  Tuple *seconds_color_t = dict_find(iter, MESSAGE_KEY_SecondsHandColor);
+  Tuple *monthhand_color_t = dict_find(iter, MESSAGE_KEY_MonthHandColor);
+  Tuple *themeselect_t = dict_find(iter, MESSAGE_KEY_ThemeSelect);
+  Tuple *bg_color1_t = dict_find(iter, MESSAGE_KEY_BackgroundColor1);
+  Tuple *bg_color2_t = dict_find(iter, MESSAGE_KEY_MinuteHandShadowColor);
+  Tuple *text_color2_t = dict_find(iter, MESSAGE_KEY_MinorTickColor);
+  Tuple *date_color_t = dict_find(iter, MESSAGE_KEY_DateColor);
+  Tuple *batweather_color_t = dict_find(iter, MESSAGE_KEY_BatteryWeatherColor);
+  Tuple *hours_color_t = dict_find(iter, MESSAGE_KEY_HourDigitsColor);
+  Tuple *minutes_color_t = dict_find(iter, MESSAGE_KEY_MinutesHandColor);
+  Tuple *hourhand_color_t = dict_find(iter, MESSAGE_KEY_HourHandColor);
+  Tuple *tick_color_t = dict_find(iter, MESSAGE_KEY_MajorTickColor);
+  Tuple *battery_line_color_t = dict_find(iter, MESSAGE_KEY_BatteryLineColor);
+  Tuple *btqt_color_t = dict_find(iter, MESSAGE_KEY_BTQTColor);
+  Tuple *shadowon_t = dict_find(iter, MESSAGE_KEY_ShadowOn);
+  Tuple *subdial_t = dict_find(iter, MESSAGE_KEY_SubDialColor);
+  #endif
   Tuple *subdialchoice_t = dict_find(iter,MESSAGE_KEY_SubDialChoice);
   Tuple *tzoffset_t = dict_find(iter, MESSAGE_KEY_TZ_OFFSET);
   Tuple *remoteampm_t = dict_find(iter, MESSAGE_KEY_showremoteAMPM);
@@ -986,6 +1076,8 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple * wbgtlevel_t = dict_find(iter, MESSAGE_KEY_WBGTLevel);
   Tuple * refreshonlaunch_t = dict_find(iter, MESSAGE_KEY_RefreshWeatherOnLaunch);
   Tuple * shaketorefresh_t = dict_find(iter, MESSAGE_KEY_ShakeToRefreshWeather);
+  Tuple * shaketopark_t = dict_find(iter, MESSAGE_KEY_ShakeToParkHands);
+  Tuple * parkseconds_t = dict_find(iter, MESSAGE_KEY_ParkHandsSeconds);
   Tuple *show_btqt_icons_t = dict_find(iter, MESSAGE_KEY_ShowBTQTIcons);
 
   if (show_btqt_icons_t) {
@@ -1020,6 +1112,19 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   if (shaketorefresh_t) {
     settings.ShakeToRefreshWeather = shaketorefresh_t->value->int32 != 0;
+    settings_changed = true;
+  }
+
+  if (shaketopark_t) {
+    settings.ShakeToParkHands = shaketopark_t->value->int32 != 0;
+    settings_changed = true;
+  }
+
+  if (parkseconds_t) {
+    int value = (int) parkseconds_t->value->int32;
+    if (value >= PARK_HANDS_MIN_SECONDS && value <= PARK_HANDS_MAX_SECONDS) {
+      settings.ParkHandsSeconds = value;
+    }
     settings_changed = true;
   }
 
@@ -1321,6 +1426,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     settings.BWMinHandBatLineColor = GColorFromHEX(bwtext_color1_t->value->int32);
                     settings_changed = true;
                   }
+                  if (bwhourhand_color_t) {
+                    settings.BWHourHandColor = GColorFromHEX(bwhourhand_color_t->value->int32);
+                    layer_mark_dirty(s_canvas_layer);
+                  }
                   if (bwtext_color2_t) {
                     settings.BWHourDigitsColor = GColorFromHEX(bwtext_color2_t->value->int32);
                     settings_changed = true;
@@ -1338,6 +1447,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                 }
           }
 /////////////////////////////////////
+  #ifdef PBL_COLOR
   if (themeselect_t) {
           const char *theme = themeselect_t->value->cstring;
           if (apply_colour_theme(theme, shadowon_t)) {
@@ -1395,6 +1505,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     layer_mark_dirty(s_canvas_layer);
                     layer_mark_dirty(s_date_battery_logo_layer);
                   }
+                  if (hourhand_color_t) {
+                    settings.HourHandColor = GColorFromHEX(hourhand_color_t->value->int32);
+                    layer_mark_dirty(s_canvas_layer);
+                  }
 
                   if (seconds_color_t) {
                     settings.SecondsHandColor = GColorFromHEX(seconds_color_t->value->int32);
@@ -1424,6 +1538,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                   theme_settings_changed = true;
                 }
           }
+  #endif // PBL_COLOR
 
                   ///////////////////////////////
 
@@ -1471,8 +1586,10 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 
   if (units_changed & MINUTE_UNIT) {
     #ifdef HAS_WEATHER
-    // Ask the phone for fresh weather every UpSlider minutes
-    if (--s_countdown <= 0) {
+    // Ask the phone for fresh weather every UpSlider minutes - only while weather is switched on
+    // (otherwise the phone ignores the request anyway, and a watch whose saved settings predate
+    // weather, UpSlider 0, would wake the Bluetooth link every minute for nothing)
+    if (settings.UseWeather && --s_countdown <= 0) {
       s_countdown = settings.UpSlider > 0 ? settings.UpSlider : 1;
       prv_request_weather_update();
     }
@@ -2037,8 +2154,9 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   
   GRect bounds = layer_get_unobstructed_bounds(s_date_battery_logo_layer);
 
-  GRect TwelveRect = GRect(1,6,bounds.size.w, 28);
-  GRect SixRect = GRect(1,bounds.size.h-28-11,bounds.size.w, 28);
+  // 28px digits, same size as basalt; 1px lower than the old 30px so they stay centred where they were
+  GRect TwelveRect = GRect(1,6+1-4,bounds.size.w, 28);   // same place as diorite/flint
+  GRect SixRect = GRect(1,bounds.size.h-28-11+1,bounds.size.w, 28);
   graphics_context_set_text_color(ctx, settings.BWHourDigitsColor);
 
   if (!settings.HourTicksOnly) {
@@ -2049,8 +2167,8 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   }
 
 
-  //draw battery value
-  if(settings.EnableBattery ){
+  //draw battery value - unless the current weather is showing in its place (as on the other watches)
+  if(settings.EnableBattery && !(settings.UseWeather && settings.ShowCurrent)){
      //if(strcmp(settings.PosTop, "lo") == 0){
       int s_battery_level = battery_state_service_peek().charge_percent;
       char BatterytoDraw[6];
@@ -2141,17 +2259,47 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 }
 
 #else   //use FCTX to antialise the digits better on all colour watches, still refers to B&W in case I change my mind later on non-APLITE watches
+
+// Starts an fctx drawing context. fctx's init allocates a scratch buffer the size of the whole
+// screen (on colour watches the same size as the frame buffer: ~24KB on basalt, ~26KB on chalk)
+// and doesn't check that it got one - if the heap is short, the first fill crashes the app
+// (fctx.c:468, "Tangent is not responding"). This checks. If the colour (anti-aliased) buffer
+// can't be had, it falls back to fctx's black & white mode, whose buffer is 1 bit per pixel
+// (~4KB) - the text is drawn without anti-aliasing for this one frame instead of crashing. If
+// even that fails, it returns false and the caller skips its text for this frame.
+static bool prv_fctx_begin(FContext *fctx, GContext *ctx) {
+  #ifdef PBL_COLOR
+  fctx_enable_aa(true);
+  #endif
+  fctx_init_context(fctx, ctx);
+  if (!fctx->flag_buffer) {
+    fctx->gctx = NULL;   // so a stray fctx_deinit_context won't free a buffer that doesn't exist
+    #ifdef PBL_COLOR
+    APP_LOG(APP_LOG_LEVEL_WARNING, "fctx: no memory for anti-aliased text (%d bytes free), drawing without", (int)heap_bytes_free());
+    fctx_enable_aa(false);
+    fctx_init_context(fctx, ctx);
+    if (!fctx->flag_buffer) {
+      fctx->gctx = NULL;
+      fctx_enable_aa(true);
+      return false;
+    }
+    #else
+    return false;
+    #endif
+  }
+  fctx_set_color_bias(fctx, 0);
+  return true;
+}
+
 static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   
   GRect bounds = layer_get_unobstructed_bounds(layer);
   GRect full_bounds = layer_get_bounds(layer);
 
   FContext fctx;
-  fctx_init_context(&fctx, ctx);
-  fctx_set_color_bias(&fctx, 0);
-  #ifdef PBL_COLOR
-   fctx_enable_aa(true);
-  #endif
+  if (!prv_fctx_begin(&fctx, ctx)) {
+    return;
+  }
 
   
   if (!settings.HourTicksOnly) {
@@ -2464,7 +2612,7 @@ static void layer_update_proc_month_hand(Layer *layer, GContext *ctx) {
        //month = prv_tick_time->tm_mon;
     int month = s_month + 1;    
   
-    int month_angle = ((double)month / 12 * 360) - 90;
+    int month_angle = month * 30 - 90;   // month/12 of a turn; integer maths (floating point costs ~2KB of code on aplite)
 
 
     draw_seconds_month_background(ctx);
@@ -2505,7 +2653,7 @@ static void layer_update_proc_tz(Layer *layer, GContext *ctx) {
       if (remote_pm && settings.showremoteAMPM) {
         GPoint pm_dot = polar_to_point_offset(hand_origin, hour_angle, (config.second_hand_a * 3/4)/2);
         graphics_context_set_fill_color(ctx, PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
-        graphics_fill_circle(ctx, pm_dot, settings.MinuteHandThickness*1.5);
+        graphics_fill_circle(ctx, pm_dot, settings.MinuteHandThickness * 3 / 2);
       }
      }
      else{
@@ -2514,7 +2662,7 @@ static void layer_update_proc_tz(Layer *layer, GContext *ctx) {
       if (remote_pm && settings.showremoteAMPM) {
         GPoint pm_dot = polar_to_point_offset(hand_origin, hour_angle, (config.second_hand_a)/2);
         graphics_context_set_fill_color(ctx, PBL_IF_BW_ELSE(settings.BWMonthHandColor, settings.MonthHandColor));
-        graphics_fill_circle(ctx, pm_dot, settings.MinuteHandThickness*1.5);
+        graphics_fill_circle(ctx, pm_dot, settings.MinuteHandThickness * 3 / 2);
       }
      }
     
@@ -2624,6 +2772,13 @@ static void hour_min_hands_canvas_update_proc(Layer *layer, GContext *ctx) {
   int minutes_angle = (360 * minutes / 60) - 90;
   int hours_angle   = (360 * (s_hours % 12) / 12) + (minutes / 2) - 90;
 
+  #ifdef HAS_WEATHER
+  if (s_hands_parked) {   // shaken: a flat bar out of the weather's way (angles: 0 = 3 o'clock)
+    minutes_angle = 0;    // minute hand to 3
+    hours_angle = 180;    // hour hand to 9
+  }
+  #endif
+
   //int hand_angle = settings.DigitalHour ? minutes_angle : hours_angle;
 
   #ifdef PBL_ROUND
@@ -2633,7 +2788,7 @@ static void hour_min_hands_canvas_update_proc(Layer *layer, GContext *ctx) {
           config.hour_hand_p2x,
           config.hour_hand_p2y,
           config.corner_radius_hourhand,
-          PBL_IF_BW_ELSE(settings.BWMinHandBatLineColor, settings.MinutesHandColor));
+          PBL_IF_BW_ELSE(settings.BWHourHandColor, settings.HourHandColor));
       draw_minute_hand(ctx, minutes_angle,
           (bounds.size.w/2 - config.analogue_hand_a)* bounds.size.h/full_bounds.size.h,
           settings.BackLen,
@@ -2650,7 +2805,7 @@ static void hour_min_hands_canvas_update_proc(Layer *layer, GContext *ctx) {
               config.hour_hand_p2x,
               config.hour_hand_p2y,
               config.corner_radius_hourhand,
-              PBL_IF_BW_ELSE(settings.BWMinHandBatLineColor, settings.MinutesHandColor));
+              PBL_IF_BW_ELSE(settings.BWHourHandColor, settings.HourHandColor));
           draw_minute_hand(ctx, minutes_angle,
               (bounds.size.w/2 - config.analogue_hand_a)* bounds.size.h/full_bounds.size.h,
               settings.BackLen,
@@ -2667,7 +2822,7 @@ static void hour_min_hands_canvas_update_proc(Layer *layer, GContext *ctx) {
               config.hour_hand_p2x,
               config.hour_hand_p2y,
               config.corner_radius_hourhand,
-              PBL_IF_BW_ELSE(settings.BWMinHandBatLineColor, settings.MinutesHandColor));
+              PBL_IF_BW_ELSE(settings.BWHourHandColor, settings.HourHandColor));
           draw_minute_hand(ctx, minutes_angle,
               (bounds.size.w/2 - config.analogue_hand_a)* bounds.size.h/full_bounds.size.h,
               settings.BackLen,
@@ -2740,18 +2895,33 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
     }
     #endif
     
-
+    #ifdef PBL_PLATFORM_APLITE
+    // aplite has no fctx: plain graphics_draw_text, with the Tangent fonts it already loads for the
+    // date (18px) and battery (16px), in the same places as the fctx text on diorite/flint.
+    graphics_context_set_text_color(ctx, settings.BWBatteryWeatherColor);
+    if (settings.ShowCurrent) {
+      char TempToDraw[6];
+      snprintf(TempToDraw, sizeof(TempToDraw), "%s%s", settings.tempstring, "°");
+      GRect TempRect = GRect(bounds.size.w / 2 + 2, config.BatteryYOffset + (settings.EnableBatteryLine ? -2 : 2),
+                             bounds.size.w / 2 - 2, 24);
+      graphics_draw_text(ctx, TempToDraw, FontDate, TempRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+    }
+    if (settings.ShowForecast) {
+      char TempForeToDraw[14];
+      snprintf(TempForeToDraw, sizeof(TempForeToDraw), "%s%s", settings.temphistring, "°");
+      GRect ForeRect = GRect(1, config.BatteryYOffset + 20, bounds.size.w, 20);
+      graphics_draw_text(ctx, TempForeToDraw, FontBattery, ForeRect, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    }
+    #else
     FContext fctx;
-    fctx_init_context(&fctx, ctx);
-    fctx_set_color_bias(&fctx, 0);
-    #ifdef PBL_COLOR
-    fctx_enable_aa(true);
-    #endif
+    if (!prv_fctx_begin(&fctx, ctx)) {
+      return;
+    }
 
     fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
             FPoint temp_pos;
             
-            int font_size_temp = (config.font_size_battery) + 6 * bounds.size.h/full_bounds.size.h;
+            int font_size_temp = (config.font_size_battery) + config.weather_temp_grow * bounds.size.h/full_bounds.size.h;
             
             //int s_battery_level = battery_state_service_peek().charge_percent;
             fctx_begin_fill(&fctx);
@@ -2795,7 +2965,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
                 FPoint fore_pos;
                 
                  fore_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 1));
-                 fore_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* bounds.size.h/full_bounds.size.h + 28);
+                 fore_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* bounds.size.h/full_bounds.size.h + config.forecast_offset);
 
 
                 char TempForeToDraw[14];
@@ -2807,7 +2977,52 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
                 }
 
     fctx_deinit_context(&fctx);
+    #endif // aplite / fctx
 
+}
+#endif
+
+#ifdef PBL_COLOR
+// Draws a background picture by copying it from its resource straight into the frame buffer,
+// one row at a time, so it takes no heap at all. (Loading it as a GBitmap took a full-screen
+// block - 32KB on chalk, 45KB on emery, 66KB on gabbro - just when fctx also needs a
+// full-screen buffer for the text; on chalk's 64KB that was enough to run out of memory.)
+// The resource is raw GColor8 bytes, one per pixel, row by row, at this screen's exact size -
+// made from the PNGs by tools/make_picture_bins.py. On the round screen only the visible part
+// of each row is copied. Returns false (and the caller fills with the flat colour) if the
+// resource is missing or the wrong size.
+static bool prv_draw_picture(GContext *ctx, uint32_t resource_id, GRect area) {
+  ResHandle handle = resource_get_handle(resource_id);
+  if (!handle) {
+    return false;
+  }
+  GBitmap *fb = graphics_capture_frame_buffer(ctx);
+  if (!fb) {
+    return false;
+  }
+  GRect fb_bounds = gbitmap_get_bounds(fb);
+  int w = fb_bounds.size.w;
+  int h = fb_bounds.size.h;
+  if (resource_size(handle) != (size_t)(w * h)) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "picture resource is %d bytes, expected %d", (int)resource_size(handle), w * h);
+    graphics_release_frame_buffer(ctx, fb);
+    return false;
+  }
+  int y_start = area.origin.y < 0 ? 0 : area.origin.y;
+  int y_end = area.origin.y + area.size.h;
+  if (y_end > h) {
+    y_end = h;
+  }
+  for (int y = y_start; y < y_end; y++) {
+    GBitmapDataRowInfo row = gbitmap_get_data_row_info(fb, y);
+    int x0 = row.min_x;
+    int x1 = row.max_x < w - 1 ? row.max_x : w - 1;
+    if (x1 >= x0) {
+      resource_load_byte_range(handle, (uint32_t)(y * w + x0), row.data + x0, (size_t)(x1 - x0 + 1));
+    }
+  }
+  graphics_release_frame_buffer(ctx, fb);
+  return true;
 }
 #endif
 
@@ -2823,20 +3038,9 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
   bool drew_bitmap = false;
   #ifdef PBL_COLOR
   if (settings.BackgroundStyle == 1 || settings.BackgroundStyle == 2) {
-    // Load, draw and free the picture straight away - never keep it in memory. A full-screen
-    // picture is w*h bytes (45KB on emery, 66KB on gabbro), and every fctx text draw later in
-    // this same frame allocates a full-screen buffer of the same size (fctx_init_context) and
-    // crashes if it can't. This layer draws first, so the picture is freed before fctx needs
-    // its buffer, and the two are never held at once. If the picture can't be allocated, the
-    // flat fill below is used instead.
-    GBitmap *picture = gbitmap_create_with_resource(settings.BackgroundStyle == 2
-                                                    ? RESOURCE_ID_IMAGE_PICTURE2
-                                                    : RESOURCE_ID_IMAGE_PICTURE1);
-    if (picture) {
-      graphics_draw_bitmap_in_rect(ctx, picture, Background);
-      gbitmap_destroy(picture);
-      drew_bitmap = true;
-    }
+    drew_bitmap = prv_draw_picture(ctx, settings.BackgroundStyle == 2 ? RESOURCE_ID_IMAGE_PICTURE2
+                                                                      : RESOURCE_ID_IMAGE_PICTURE1,
+                                   Background);
   }
   #endif
   if (!drew_bitmap) {
@@ -2905,13 +3109,18 @@ static void prv_window_load(Window *window) {
     FontBTQTIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DRIPICONS_16));
     //non-fctx custom fonts for B&W screens
     #ifdef PBL_PLATFORM_APLITE
-    FontDate = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DATE_18));
+    FontDate = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DATE_20));
     FontBattery = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DATE_16));
     FontLogo = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DATE_14));
-    FontHour = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DATE_30));
+    FontHour = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DATE_28));
     #endif
     #ifdef HAS_WEATHER
+    // 20px icons on emery/gabbro's bigger screens, 16px everywhere else
+    #if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
     FontWeatherIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WEATHERICONS_20));
+    #else
+    FontWeatherIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WEATHERICONS_16));
+    #endif
     #endif
   // Subscribe to the connection service to get Bluetooth status updates.
   connection_service_subscribe((ConnectionHandlers){
@@ -3013,6 +3222,9 @@ static void prv_window_unload(Window *window) {
   // Don't let a pending reconnect-triggered request fire later, into whatever window happens to
   // be loaded next.
   if (s_weather_reconnect_timer) { app_timer_cancel(s_weather_reconnect_timer); s_weather_reconnect_timer = NULL; }
+  // Nor let the hands' un-park timer touch the hands layer after it's destroyed below.
+  if (s_park_hands_timer) { app_timer_cancel(s_park_hands_timer); s_park_hands_timer = NULL; }
+  s_hands_parked = false;
   #endif
 
   accel_tap_service_unsubscribe();
@@ -3058,9 +3270,16 @@ static void prv_init(void) {
 
   // The inbox is larger on emery/gabbro to fit the extra weather data (smaller buffers crashed).
   // The watch only ever sends the 1-byte weather request (see prv_request_weather_update).
-  #ifdef HAS_WEATHER
+  #if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
   const uint32_t inbox_size = 2048;
+  #elif defined(PBL_PLATFORM_APLITE)
+  // aplite has only 24KB for everything. The biggest message a B&W watch gets (53 keys - the
+  // phone strips the colour and phone-only ones) is ~590 bytes.
+  const uint32_t inbox_size = 768;
   #else
+  // Everything else: the biggest message the phone sends (all settings + weather, with the
+  // phone-only keys like the API key and location stripped) is ~770 bytes, so 1KB is enough.
+  // Memory is tight here: on chalk every KB counts towards fctx's ~26KB text buffer.
   const uint32_t inbox_size = 1024;
   #endif
   app_message_open(inbox_size, dict_calc_buffer_size(1, sizeof(uint8_t)));

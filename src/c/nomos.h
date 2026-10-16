@@ -1,7 +1,7 @@
 #pragma once
 #include <pebble.h>
 
-#define SETTINGS_KEY 150 // bumped: added BatteryWeatherColor / BWBatteryWeatherColor
+#define SETTINGS_KEY 152 // bumped: added ParkHandsSeconds
 
 typedef struct ClaySettings {
   int SecondsVisibleTime;
@@ -77,7 +77,13 @@ typedef struct ClaySettings {
   int RainAmount; // 0-10, index into the rain-amount icon set (see Weather.c)
   bool HourTicksOnly;
   bool ShakeToRefreshWeather;
+  bool ShakeToParkHands; // shake swings the hour hand to 9 and minute hand to 3 for a few seconds
+  int ParkHandsSeconds;  // ...for this many seconds
   int BackgroundStyle; // colour platforms only: 0 = flat BackgroundColor1, 1 = picture1,
                        // 2 = picture2. Only the flat fill in bg_update_proc is replaced;
                        // BackgroundColor1 is still used everywhere else.
+  // Added in 4.3 at the end, so settings saved by older versions still load (see
+  // prv_load_settings, which starts these at the minute hand's colour for those).
+  GColor HourHandColor;
+  GColor BWHourHandColor;
 } __attribute__((__packed__)) ClaySettings;

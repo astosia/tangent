@@ -288,7 +288,6 @@ module.exports = [
   },
   {
     "type": "section",
-    "capabilities": ["NOT_PLATFORM_APLITE", "NOT_PLATFORM_BASALT", "NOT_PLATFORM_CHALK", "NOT_PLATFORM_DIORITE", "NOT_PLATFORM_FLINT"],
     "items": [
     {
         "type": "heading",
@@ -345,8 +344,12 @@ module.exports = [
             "value": "ds"
           },
           {
-            "label": "OpenWeatherMap",
+            "label": "OpenWeatherMap (One Call 3.0)",
             "value": "owm"
+          },
+          {
+            "label": "OpenWeatherMap (One Call 4.0)",
+            "value": "owm4"
           }
         ]
       },
@@ -379,7 +382,7 @@ module.exports = [
         "messageKey": "APIKEY_User",
         "defaultValue": "",
         "label": "OWM API Key",
-        "description": "Weather data uses Open-Meteo by default which does not require an API key.  If you prefer OpenWeatherMap, you can <a href =https://home.openweathermap.org/users/sign_up/>register for a free personal API key here</a>. There is a free tier",
+        "description": "Weather data uses Open-Meteo by default which does not require an API key.  If you prefer OpenWeatherMap, you can <a href =https://home.openweathermap.org/users/sign_up/>register for a free personal API key here</a>. There is a free tier. One Call 3.0 and One Call 4.0 each need their own (free tier) subscription on your OpenWeatherMap account; 4.0 uses three calls per weather update.",
         "attributes": {
           "placeholder": "Paste OpenWeatherMap API Key here, leave blank for Open-Meteo"
         }
@@ -405,8 +408,24 @@ module.exports = [
         "type": "toggle",
         "messageKey": "ShakeToRefreshWeather",
         "label": "Shake to Refresh Weather",
-        "description": "Request fresh weather on demand<br>(limited to one attempt per minute)",
+        "description": "Request fresh weather on demand<br>(limited to one attempt per minute). If Shake to Move Hands Aside is also on, shake twice within 2 seconds to refresh",
         "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "messageKey": "ShakeToParkHands",
+        "label": "Shake to Move Hands Aside",
+        "description": "Shake to swing the hands into a flat line (hour hand to 9, minute hand to 3) for a few seconds, so they don't cover the weather",
+        "defaultValue": false
+      },
+      {
+        "type": "slider",
+        "messageKey": "ParkHandsSeconds",
+        "label": "Hands aside for (seconds)",
+        "defaultValue": 5,
+        "min": 2,
+        "max": 20,
+        "step": 1
       },
       {
         "type": "submit",
@@ -520,8 +539,14 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Minute & Hour Hand Colour",
+        "label": "Minute Hand Colour",
         "messageKey": "MinutesHandColor",
+        "defaultValue": "FF5500"
+      },
+      {
+        "type": "color",
+        "label": "Hour Hand Colour",
+        "messageKey": "HourHandColor",
         "defaultValue": "FF5500"
       },
       {
@@ -639,8 +664,14 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Hands & Battery Line Colour",
+        "label": "Minute Hand & Battery Line Colour",
         "messageKey": "BWMinHandBatLineColor",
+        "defaultValue": "000000"
+      },
+      {
+        "type": "color",
+        "label": "Hour Hand Colour",
+        "messageKey": "BWHourHandColor",
         "defaultValue": "000000"
       },
       {
@@ -678,7 +709,7 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Battery Value Text Colour",
+        "label": "Battery & Weather Text Colour",
         "messageKey": "BWBatteryWeatherColor",
         "defaultValue": "000000",
         "allowGray": true

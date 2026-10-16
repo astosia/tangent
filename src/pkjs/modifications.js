@@ -580,7 +580,7 @@ module.exports = function(minified) {
     // hides those itself.
     var WEATHER_IDS = ["WEATHER_HEADING", "WATCH_PREVIEW_4", "WEATHER_SAVE"];
     var WEATHER_KEYS = ["WeatherProv", "LocationQuery", "APIKEY_User", "UpSlider", "RefreshWeatherOnLaunch", "WeatherUnit",
-                          "ShowCurrent", "ShowForecast", "ShowAlert", "ShakeToRefreshWeather"];
+                          "ShowCurrent", "ShowForecast", "ShowAlert", "ShakeToRefreshWeather", "ShakeToParkHands"];
 
     var updateWeatherSectionVisibility = function() {
         var useWeather = config.getItemByMessageKey("UseWeather");
@@ -596,6 +596,14 @@ module.exports = function(minified) {
 
         // Any location-search message is hidden along with the rest; it reappears by itself on the next error
         if (!isWeatherOn) setVisible(config.getItemById("LOCATION_DEBUG"), false);
+    };
+
+    // "Hands aside for (seconds)" only matters while weather and "Shake to Move Hands Aside" are both on
+    var updateParkHandsVisibility = function() {
+        var useWeather = config.getItemByMessageKey("UseWeather");
+        var park = config.getItemByMessageKey("ShakeToParkHands");
+        setVisible(config.getItemByMessageKey("ParkHandsSeconds"),
+                   !!(useWeather && useWeather.get() && park && park.get()));
     };
 
     // The date format and language options only matter while the date is shown
@@ -625,9 +633,9 @@ module.exports = function(minified) {
     var CUSTOM_COLOUR_IDS = ["CUSTOM_COLOURS_HEADING", "WATCH_PREVIEW_6"];
     var CUSTOM_COLOUR_KEYS = [
         "BackgroundColor1", "MinuteHandShadowColor", "MajorTickColor", "MinorTickColor",
-        "HourDigitsColor", "MinutesHandColor", "SecondsHandColor", "MonthHandColor",
+        "HourDigitsColor", "MinutesHandColor", "HourHandColor", "SecondsHandColor", "MonthHandColor",
         "SubDialColor", "DateColor", "BatteryWeatherColor", "BatteryLineColor", "BTQTColor",
-        "BWBackgroundColor1", "BWMinuteHandShadowColor", "BWMajorTickColor", "BWMinHandBatLineColor",
+        "BWBackgroundColor1", "BWMinuteHandShadowColor", "BWMajorTickColor", "BWMinHandBatLineColor", "BWHourHandColor",
         "BWSecondsHandColor", "BWMonthHandColor", "BWSubDialColor", "BWHourDigitsColor",
         "BWDateColor", "BWBatteryWeatherColor", "BWBTQTColor"
     ];
@@ -792,22 +800,22 @@ module.exports = function(minified) {
     //   emery -> emery, gabbro -> gabbro, aplite/diorite/flint -> bw,
     //   chalk -> round, basalt -> default
     var PREVIEW_SCREENS = {
-        aplite:  { w: 144, h: 168, round: false, bw: true,  geom: "bw",      aplite: true },
-        basalt:  { w: 144, h: 168, round: false, bw: false, geom: "default" },
-        chalk:   { w: 180, h: 180, round: true,  bw: false, geom: "round" },
-        diorite: { w: 144, h: 168, round: false, bw: true,  geom: "bw" },
+        aplite:  { w: 144, h: 168, round: false, bw: true,  geom: "bw",      aplite: true, weather: true },
+        basalt:  { w: 144, h: 168, round: false, bw: false, geom: "default", weather: true },
+        chalk:   { w: 180, h: 180, round: true,  bw: false, geom: "round", weather: true },
+        diorite: { w: 144, h: 168, round: false, bw: true,  geom: "bw", weather: true },
         emery:   { w: 200, h: 228, round: false, bw: false, geom: "emery",   weather: true },
-        flint:   { w: 144, h: 168, round: false, bw: true,  geom: "bw" },
+        flint:   { w: 144, h: 168, round: false, bw: true,  geom: "bw", weather: true },
         gabbro:  { w: 260, h: 260, round: true,  bw: false, geom: "gabbro",  weather: true }
     };
 
     // Generated from the UIConfig blocks in nomos.c. Rects are [x, y, w, h].
     var PREVIEW_GEOMETRY = {
-        emery: { DateBottomYPosition: 60, yOffset: -8, yOffsetFctx: 3, yWeekdayDateOffset: 27, BatteryYOffset: 53, BatteryLineYOffset: 78, font_size_digits: 40, digit_inset: 14, font_size_battery: 20, font_size_date: 28, battery_pos_z: 0, battery_pos_y: 6, battery_line: 63, analogue_hand_a: 1, analogue_hand_c: 1, hands_shadow: 2, corner_radius_minutehand: 20, corner_radius_hourhand: 10, corner_radius_majortickrect: 20, corner_radius_minortickrect: 20, majortickrect_w: 94, majortickrect_h: 108, minortickrect_w: 96, minortickrect_h: 110, outertickinset: 6, innertickinset: 12, majorticklength: 6, majorticklengthinner: 30, tick_inset_outer: -10, tick_inset_inner: 30, HourCentreOuterRadius: 7, HourCentreInnerRadius: 2, SecondHandCentreOuterRadius: 5, SecondHandCentreInnerRadius: 2, hour_hand_p2x: 50, hour_hand_p2y: 50, min_hand_p2x: 12, min_hand_p2y: 12, second_hand_a: 26, second_hand_b: 0, seconds_circle_radius: 28, seconds_circle_centre_x: 100, seconds_circle_centre_y: 154, romanadjust: 2, BTIconRect: [53, 21, 44, 20], QTIconRect: [106, 20, 44, 20], IconNowRect: [0, 48, 98, 22], IconNowRect2: [0, 52, 98, 22], RainIconRect: [48, 81, 40, 22], WarningIconRect: [132, 83, 40, 22] },
-        gabbro: { DateBottomYPosition: 67, yOffset: -8, yOffsetFctx: 3, yWeekdayDateOffset: 29, BatteryYOffset: 64, BatteryLineYOffset: 87, font_size_digits: 48, digit_inset: 31, font_size_battery: 20, font_size_date: 32, battery_pos_z: -2, battery_pos_y: 4, battery_line: 63, analogue_hand_a: 11, analogue_hand_c: 1, hands_shadow: 2, corner_radius_minutehand: 0, corner_radius_hourhand: 0, corner_radius_majortickrect: 0, corner_radius_minortickrect: 0, majortickrect_w: 0, majortickrect_h: 0, minortickrect_w: 0, minortickrect_h: 0, outertickinset: 6, innertickinset: 12, majorticklength: 6, majorticklengthinner: 36, tick_inset_outer: 0, tick_inset_inner: 0, HourCentreOuterRadius: 9, HourCentreInnerRadius: 3, SecondHandCentreOuterRadius: 5, SecondHandCentreInnerRadius: 2, hour_hand_p2x: 0, hour_hand_p2y: 0, min_hand_p2x: 0, min_hand_p2y: 0, second_hand_a: 29, second_hand_b: 0, seconds_circle_radius: 31, seconds_circle_centre_x: 130, seconds_circle_centre_y: 175, romanadjust: 0, BTIconRect: [78, 23, 44, 20], QTIconRect: [140, 22, 44, 20], IconNowRect: [0, 60, 128, 22], IconNowRect2: [0, 64, 128, 22], RainIconRect: [75, 90, 40, 22], WarningIconRect: [165, 91, 40, 22] },
-        bw: { DateBottomYPosition: 40, yOffset: -7, yOffsetFctx: 2, yWeekdayDateOffset: 16, BatteryYOffset: 36, BatteryLineYOffset: 55, font_size_digits: 30, digit_inset: 10, font_size_battery: 16, font_size_date: 20, battery_pos_z: 0, battery_pos_y: 4, battery_line: 51, analogue_hand_a: 1, analogue_hand_c: 1, hands_shadow: 1, corner_radius_minutehand: 15, corner_radius_hourhand: 6, corner_radius_majortickrect: 15, corner_radius_minortickrect: 15, majortickrect_w: 70, majortickrect_h: 80, minortickrect_w: 70, minortickrect_h: 80, outertickinset: 6, innertickinset: 10, majorticklength: 6, majorticklengthinner: 14, tick_inset_outer: -10, tick_inset_inner: 20, HourCentreOuterRadius: 6, HourCentreInnerRadius: 2, SecondHandCentreOuterRadius: 4, SecondHandCentreInnerRadius: 1, hour_hand_p2x: 36, hour_hand_p2y: 36, min_hand_p2x: 8, min_hand_p2y: 8, second_hand_a: 17, second_hand_b: 0, seconds_circle_radius: 18, seconds_circle_centre_x: 72, seconds_circle_centre_y: 114, romanadjust: 1, BTIconRect: [36, 16, 36, 20], QTIconRect: [75, 16, 36, 20] },
-        round: { DateBottomYPosition: 48, yOffset: -7, yOffsetFctx: 2, yWeekdayDateOffset: 21, BatteryYOffset: 36, BatteryLineYOffset: 55, font_size_digits: 32, digit_inset: 23, font_size_battery: 16, font_size_date: 22, battery_pos_z: 0, battery_pos_y: 4, battery_line: 51, analogue_hand_a: 10, analogue_hand_c: 0, hands_shadow: 2, corner_radius_minutehand: 0, corner_radius_hourhand: 0, corner_radius_majortickrect: 0, corner_radius_minortickrect: 0, majortickrect_w: 0, majortickrect_h: 0, minortickrect_w: 0, minortickrect_h: 0, outertickinset: 6, innertickinset: 11, majorticklength: 6, majorticklengthinner: 22, tick_inset_outer: 0, tick_inset_inner: 0, HourCentreOuterRadius: 6, HourCentreInnerRadius: 2, SecondHandCentreOuterRadius: 4, SecondHandCentreInnerRadius: 1, hour_hand_p2x: 0, hour_hand_p2y: 0, min_hand_p2x: 0, min_hand_p2y: 0, second_hand_a: 20, second_hand_b: 0, seconds_circle_radius: 21, seconds_circle_centre_x: 90, seconds_circle_centre_y: 121, romanadjust: 0, BTIconRect: [54, 17, 32, 20], QTIconRect: [97, 16, 32, 20] },
-        default: { DateBottomYPosition: 40, yOffset: -7, yOffsetFctx: 2, yWeekdayDateOffset: 16, BatteryYOffset: 36, BatteryLineYOffset: 55, font_size_digits: 28, digit_inset: 10, font_size_battery: 16, font_size_date: 20, battery_pos_z: 0, battery_pos_y: 4, battery_line: 51, analogue_hand_a: 1, analogue_hand_c: 1, hands_shadow: 2, corner_radius_minutehand: 15, corner_radius_hourhand: 6, corner_radius_majortickrect: 15, corner_radius_minortickrect: 15, majortickrect_w: 70, majortickrect_h: 80, minortickrect_w: 70, minortickrect_h: 80, outertickinset: 6, innertickinset: 10, majorticklength: 6, majorticklengthinner: 14, tick_inset_outer: -10, tick_inset_inner: 20, HourCentreOuterRadius: 6, HourCentreInnerRadius: 2, SecondHandCentreOuterRadius: 4, SecondHandCentreInnerRadius: 1, hour_hand_p2x: 36, hour_hand_p2y: 36, min_hand_p2x: 8, min_hand_p2y: 8, second_hand_a: 16, second_hand_b: 0, seconds_circle_radius: 18, seconds_circle_centre_x: 72, seconds_circle_centre_y: 114, romanadjust: 1, BTIconRect: [36, 16, 36, 20], QTIconRect: [75, 16, 36, 20] }
+        emery: { DateBottomYPosition: 60, yOffset: -8, yOffsetFctx: 3, yWeekdayDateOffset: 27, BatteryYOffset: 53, BatteryLineYOffset: 78, font_size_digits: 40, digit_inset: 14, font_size_battery: 20, font_size_date: 28, battery_pos_z: 0, battery_pos_y: 6, battery_line: 63, analogue_hand_a: 1, analogue_hand_c: 1, hands_shadow: 2, corner_radius_minutehand: 20, corner_radius_hourhand: 10, corner_radius_majortickrect: 20, corner_radius_minortickrect: 20, majortickrect_w: 94, majortickrect_h: 108, minortickrect_w: 96, minortickrect_h: 110, outertickinset: 6, innertickinset: 12, majorticklength: 6, majorticklengthinner: 30, tick_inset_outer: -10, tick_inset_inner: 30, HourCentreOuterRadius: 7, HourCentreInnerRadius: 2, SecondHandCentreOuterRadius: 5, SecondHandCentreInnerRadius: 2, hour_hand_p2x: 50, hour_hand_p2y: 50, min_hand_p2x: 12, min_hand_p2y: 12, second_hand_a: 26, second_hand_b: 0, seconds_circle_radius: 28, seconds_circle_centre_x: 100, seconds_circle_centre_y: 154, romanadjust: 2, BTIconRect: [53, 21, 44, 20], QTIconRect: [106, 20, 44, 20], IconNowRect: [0, 48, 98, 22], IconNowRect2: [0, 52, 98, 22], RainIconRect: [48, 81, 40, 22], WarningIconRect: [132, 83, 40, 22], weather_icon_size: 20, forecast_offset: 28, weather_temp_grow: 6 },
+        gabbro: { DateBottomYPosition: 67, yOffset: -8, yOffsetFctx: 3, yWeekdayDateOffset: 29, BatteryYOffset: 64, BatteryLineYOffset: 87, font_size_digits: 48, digit_inset: 31, font_size_battery: 20, font_size_date: 32, battery_pos_z: -2, battery_pos_y: 4, battery_line: 63, analogue_hand_a: 11, analogue_hand_c: 1, hands_shadow: 2, corner_radius_minutehand: 0, corner_radius_hourhand: 0, corner_radius_majortickrect: 0, corner_radius_minortickrect: 0, majortickrect_w: 0, majortickrect_h: 0, minortickrect_w: 0, minortickrect_h: 0, outertickinset: 6, innertickinset: 12, majorticklength: 6, majorticklengthinner: 36, tick_inset_outer: 0, tick_inset_inner: 0, HourCentreOuterRadius: 9, HourCentreInnerRadius: 3, SecondHandCentreOuterRadius: 5, SecondHandCentreInnerRadius: 2, hour_hand_p2x: 0, hour_hand_p2y: 0, min_hand_p2x: 0, min_hand_p2y: 0, second_hand_a: 29, second_hand_b: 0, seconds_circle_radius: 31, seconds_circle_centre_x: 130, seconds_circle_centre_y: 175, romanadjust: 0, BTIconRect: [78, 23, 44, 20], QTIconRect: [140, 22, 44, 20], IconNowRect: [0, 60, 128, 22], IconNowRect2: [0, 64, 128, 22], RainIconRect: [75, 90, 40, 22], WarningIconRect: [165, 91, 40, 22], weather_icon_size: 20, forecast_offset: 28, weather_temp_grow: 6 },
+        bw: { DateBottomYPosition: 40, yOffset: -7, yOffsetFctx: 2, yWeekdayDateOffset: 16, BatteryYOffset: 37, BatteryLineYOffset: 56, font_size_digits: 28, digit_inset: 10, font_size_battery: 16, font_size_date: 20, battery_pos_z: 0, battery_pos_y: 4, battery_line: 51, analogue_hand_a: 1, analogue_hand_c: 1, hands_shadow: 1, corner_radius_minutehand: 15, corner_radius_hourhand: 6, corner_radius_majortickrect: 15, corner_radius_minortickrect: 15, majortickrect_w: 70, majortickrect_h: 80, minortickrect_w: 70, minortickrect_h: 80, outertickinset: 6, innertickinset: 10, majorticklength: 6, majorticklengthinner: 14, tick_inset_outer: -10, tick_inset_inner: 20, HourCentreOuterRadius: 6, HourCentreInnerRadius: 2, SecondHandCentreOuterRadius: 4, SecondHandCentreInnerRadius: 1, hour_hand_p2x: 36, hour_hand_p2y: 36, min_hand_p2x: 8, min_hand_p2y: 8, second_hand_a: 17, second_hand_b: 0, seconds_circle_radius: 18, seconds_circle_centre_x: 72, seconds_circle_centre_y: 114, romanadjust: 1, BTIconRect: [36, 16, 36, 20], QTIconRect: [75, 16, 36, 20], IconNowRect: [0, 32, 70, 18], IconNowRect2: [0, 36, 70, 18], RainIconRect: [30, 56, 30, 18], WarningIconRect: [97, 57, 30, 18], weather_icon_size: 16, forecast_offset: 21, weather_temp_grow: 4, aplite_temp_dy: [-2, 2], aplite_fore_dy: 20 },
+        round: { DateBottomYPosition: 48, yOffset: -7, yOffsetFctx: 2, yWeekdayDateOffset: 21, BatteryYOffset: 42, BatteryLineYOffset: 61, font_size_digits: 32, digit_inset: 23, font_size_battery: 16, font_size_date: 22, battery_pos_z: 0, battery_pos_y: 4, battery_line: 51, analogue_hand_a: 10, analogue_hand_c: 0, hands_shadow: 2, corner_radius_minutehand: 0, corner_radius_hourhand: 0, corner_radius_majortickrect: 0, corner_radius_minortickrect: 0, majortickrect_w: 0, majortickrect_h: 0, minortickrect_w: 0, minortickrect_h: 0, outertickinset: 6, innertickinset: 11, majorticklength: 6, majorticklengthinner: 22, tick_inset_outer: 0, tick_inset_inner: 0, HourCentreOuterRadius: 6, HourCentreInnerRadius: 2, SecondHandCentreOuterRadius: 4, SecondHandCentreInnerRadius: 1, hour_hand_p2x: 0, hour_hand_p2y: 0, min_hand_p2x: 0, min_hand_p2y: 0, second_hand_a: 20, second_hand_b: 0, seconds_circle_radius: 21, seconds_circle_centre_x: 90, seconds_circle_centre_y: 121, romanadjust: 0, BTIconRect: [54, 17, 32, 20], QTIconRect: [97, 16, 32, 20], IconNowRect: [0, 37, 88, 18], IconNowRect2: [0, 41, 88, 18], RainIconRect: [48, 61, 30, 18], WarningIconRect: [115, 62, 30, 18], weather_icon_size: 16, forecast_offset: 21, weather_temp_grow: 4 },
+        default: { DateBottomYPosition: 40, yOffset: -7, yOffsetFctx: 2, yWeekdayDateOffset: 16, BatteryYOffset: 37, BatteryLineYOffset: 56, font_size_digits: 28, digit_inset: 10, font_size_battery: 16, font_size_date: 20, battery_pos_z: 0, battery_pos_y: 4, battery_line: 51, analogue_hand_a: 1, analogue_hand_c: 1, hands_shadow: 2, corner_radius_minutehand: 15, corner_radius_hourhand: 6, corner_radius_majortickrect: 15, corner_radius_minortickrect: 15, majortickrect_w: 70, majortickrect_h: 80, minortickrect_w: 70, minortickrect_h: 80, outertickinset: 6, innertickinset: 10, majorticklength: 6, majorticklengthinner: 14, tick_inset_outer: -10, tick_inset_inner: 20, HourCentreOuterRadius: 6, HourCentreInnerRadius: 2, SecondHandCentreOuterRadius: 4, SecondHandCentreInnerRadius: 1, hour_hand_p2x: 36, hour_hand_p2y: 36, min_hand_p2x: 8, min_hand_p2y: 8, second_hand_a: 16, second_hand_b: 0, seconds_circle_radius: 18, seconds_circle_centre_x: 72, seconds_circle_centre_y: 114, romanadjust: 1, BTIconRect: [36, 16, 36, 20], QTIconRect: [75, 16, 36, 20], IconNowRect: [0, 32, 70, 18], IconNowRect2: [0, 36, 70, 18], RainIconRect: [30, 56, 30, 18], WarningIconRect: [97, 57, 30, 18], weather_icon_size: 16, forecast_offset: 21, weather_temp_grow: 4 },
     };
 
     // ---- Colours ----
@@ -902,7 +910,7 @@ module.exports = function(minified) {
                 c = {
                     bg: bwBg, subdial: bwBg, shadow: shadowOn ? "#555555" : bwBg,
                     minorTick: fg, majorTick: fg, hourDigits: fg, date: fg, info: fg,
-                    hands: fg, seconds: fg, month: fg, batteryLine: fg, btqt: fg
+                    hands: fg, hourHand: fg, seconds: fg, month: fg, batteryLine: fg, btqt: fg
                 };
             } else {
                 var customBg = getColourVal("BWBackgroundColor1", "#FFFFFF");
@@ -917,6 +925,7 @@ module.exports = function(minified) {
                     date: getColourVal("BWDateColor", "#000000"),
                     info: getColourVal("BWBatteryWeatherColor", "#000000"),
                     hands: handsColour,
+                    hourHand: getColourVal("BWHourHandColor", handsColour),
                     seconds: getColourVal("BWSecondsHandColor", "#000000"),
                     month: getColourVal("BWMonthHandColor", "#000000"),
                     batteryLine: handsColour,
@@ -931,7 +940,7 @@ module.exports = function(minified) {
                 c = {
                     bg: theme.bg, subdial: theme.bg, shadow: shadowOn ? theme.shadow : theme.bg,
                     minorTick: theme.minor, majorTick: theme.text, hourDigits: theme.text, date: theme.text, info: theme.text,
-                    hands: theme.hands, seconds: theme.accent, month: theme.accent,
+                    hands: theme.hands, hourHand: theme.hands, seconds: theme.accent, month: theme.accent,
                     batteryLine: theme.battery, btqt: theme.btqt
                 };
             } else {
@@ -946,6 +955,7 @@ module.exports = function(minified) {
                     date: getColourVal("DateColor", "#000000"),
                     info: getColourVal("BatteryWeatherColor", "#000000"),
                     hands: getColourVal("MinutesHandColor", "#FF5500"),
+                    hourHand: getColourVal("HourHandColor", getColourVal("MinutesHandColor", "#FF5500")),
                     seconds: getColourVal("SecondsHandColor", "#FF5500"),
                     month: getColourVal("MonthHandColor", "#FF5500"),
                     batteryLine: getColourVal("BatteryLineColor", "#FF5500"),
@@ -1404,11 +1414,12 @@ module.exports = function(minified) {
         };
 
         // graphics_draw_text-style text (aplite): top of the line box at y, centred on x
-        var boxText = function(text, x, y, px, colour) {
+        // (or with its left edge at x for align 'left')
+        var boxText = function(text, x, y, px, colour, align) {
             ctx.save();
             ctx.font = px + "px " + PREVIEW_TEXT_FAMILY;
             ctx.fillStyle = colour;
-            ctx.textAlign = 'center';
+            ctx.textAlign = align || 'center';
             ctx.textBaseline = 'alphabetic';
             ctx.fillText(text, x, y + PREVIEW_FONT_ASCENT * px);
             ctx.restore();
@@ -1621,9 +1632,9 @@ module.exports = function(minified) {
             // Numbers/Roman numerals replaced by plain tick marks - handled above in the tick loop
         } else if (m.aplite) {
             // Aplite only draws 12 (and 6 if the date is off), using a plain bitmap-style font
-            boxText(m.roman ? "XII" : "12", 1 + idiv(w, 2), 6, 30, c.hourDigits);
+            boxText(m.roman ? "XII" : "12", 1 + idiv(w, 2), 6 + 1 - 4 + 2, 28, c.hourDigits);   // +2: the preview draws this font 2px higher than the watch does
             if (!m.enableDate) {
-                boxText(m.roman ? "VI" : "6", 1 + idiv(w, 2), h - 28 - 11, 30, c.hourDigits);
+                boxText(m.roman ? "VI" : "6", 1 + idiv(w, 2), h - 28 - 11 + 1, 28, c.hourDigits);
             }
         } else {
             var digitEm = m.roman ? g.font_size_digits - g.romanadjust : g.font_size_digits;
@@ -1646,7 +1657,7 @@ module.exports = function(minified) {
         if (m.enableDate) {
             var dateText = previewDateText(m.dateFormat, previewDateParts(m.dateLanguage));
             if (m.aplite) {
-                boxText(dateText, idiv(w, 2), g.DateBottomYPosition + g.yOffset + g.yWeekdayDateOffset + 88, 18, c.date);
+                boxText(dateText, idiv(w, 2), g.DateBottomYPosition + g.yOffset + g.yWeekdayDateOffset + 88, 20, c.date);
             } else {
                 fctxText(dateText, idiv(w, 2), h - g.DateBottomYPosition + g.yOffset + g.yOffsetFctx + g.yWeekdayDateOffset,
                          g.font_size_date, c.date, 'center', 'top', 0);
@@ -1666,7 +1677,7 @@ module.exports = function(minified) {
             }
         }
 
-        // ---- Weather (emery / gabbro): sample values ----
+        // ---- Weather (every watch): sample values ----
         // Sample alert state: a rain warning and the most severe WBGT (heat stress) level, so
         // both alert icons are visible together for the user to check their colours against.
         var SAMPLE_RAIN_SOON = true;
@@ -1692,31 +1703,40 @@ module.exports = function(minified) {
             if (m.showCurrent) {
                 // Clear-sky glyph (weather icon 101), right-aligned in the icon rect
                 var iconRect = m.enableBatteryLine ? g.IconNowRect : g.IconNowRect2;
-                weatherIcon("\uF00D", 20, iconRect, 'right');
+                weatherIcon("\uF00D", g.weather_icon_size, iconRect, 'right');
 
-                var tempY = g.BatteryYOffset + g.yOffsetFctx + (m.enableBatteryLine ? g.battery_pos_z : g.battery_pos_y) - 3;
                 var tempText = previewTemp(PREVIEW_WEATHER_C.temp, m.fahrenheit) + "\u00B0";
-                fctxText(tempText, cx + 2, tempY, g.font_size_battery + 6, c.info, 'left', 'top', 0);
+                if (m.aplite) {
+                    // aplite has no fctx: graphics_draw_text with the 18px Tangent font
+                    boxText(tempText, cx + 2, g.BatteryYOffset + g.aplite_temp_dy[m.enableBatteryLine ? 0 : 1], 20, c.info, 'left');
+                } else {
+                    var tempY = g.BatteryYOffset + g.yOffsetFctx + (m.enableBatteryLine ? g.battery_pos_z : g.battery_pos_y) - 3;
+                    fctxText(tempText, cx + 2, tempY, g.font_size_battery + g.weather_temp_grow, c.info, 'left', 'top', 0);
+                }
             }
 
             if (m.showAlert) {
                 if (SAMPLE_RAIN_SOON) {
                     // Rain-amount glyph for the next hour, graded by how much rain is expected
                     var rainGlyph = RAIN_AMOUNT_GLYPHS[SAMPLE_RAIN_AMOUNT] || "\uF084";
-                    weatherIcon(rainGlyph, 20, g.RainIconRect, 'left');
+                    weatherIcon(rainGlyph, g.weather_icon_size, g.RainIconRect, 'left');
                 }
                 if (SAMPLE_WBGT_LEVEL > 0) {
                     // One glyph per severity: F0EC (yellow), F0ED (red), F0EE (black, level 3+)
                     var warnGlyph = SAMPLE_WBGT_LEVEL === 1 ? "\uF0EC" : SAMPLE_WBGT_LEVEL === 2 ? "\uF0ED" : "\uF0EE";
-                    weatherIcon(warnGlyph, 20, g.WarningIconRect, 'left');
+                    weatherIcon(warnGlyph, g.weather_icon_size, g.WarningIconRect, 'left');
                 }
             }
 
             if (m.showForecast) {
                 var foreText = previewTemp(PREVIEW_WEATHER_C.high, m.fahrenheit) + " | " +
                                previewTemp(PREVIEW_WEATHER_C.low, m.fahrenheit) + "\u00B0";
-                fctxText(foreText, cx + 1, g.BatteryYOffset + g.yOffsetFctx + g.battery_pos_z + 28,
-                         g.font_size_battery + 2, c.info, 'center', 'top', 0);
+                if (m.aplite) {
+                    boxText(foreText, cx + 1, g.BatteryYOffset + g.aplite_fore_dy, 16, c.info);
+                } else {
+                    fctxText(foreText, cx + 1, g.BatteryYOffset + g.yOffsetFctx + g.battery_pos_z + g.forecast_offset,
+                             g.font_size_battery + 2, c.info, 'center', 'top', 0);
+                }
             }
         }
 
@@ -1752,9 +1772,9 @@ module.exports = function(minified) {
                 disc(off, m.hourCentre, c.shadow);
             }
 
-            line(p1, p2, m.hourThickness, handColour, 'round');
-            disc(p1, m.backSize, handColour);
-            disc(origin, m.hourCentre, handColour);
+            line(p1, p2, m.hourThickness, c.hourHand, 'round');
+            disc(p1, m.backSize, c.hourHand);
+            disc(origin, m.hourCentre, c.hourHand);
         })();
 
         // Minute hand
@@ -1880,10 +1900,10 @@ module.exports = function(minified) {
         "MinuteHandThickness", "HourHandThickness", "MinuteCentreSize", "HourCentreSize",
         "InnerCentreSize", "BackSize", "BackLen",
         "ShadowOn", "BackgroundStyle", "ThemeSelect", "BackgroundColor1", "MinuteHandShadowColor", "MajorTickColor",
-        "MinorTickColor", "HourDigitsColor", "MinutesHandColor", "SecondsHandColor", "MonthHandColor",
+        "MinorTickColor", "HourDigitsColor", "MinutesHandColor", "HourHandColor", "SecondsHandColor", "MonthHandColor",
         "SubDialColor", "DateColor", "BatteryWeatherColor", "BatteryLineColor", "BTQTColor",
         "BWShadowOn", "BWThemeSelect", "BWBackgroundColor1", "BWMinuteHandShadowColor", "BWMajorTickColor",
-        "BWMinHandBatLineColor", "BWSecondsHandColor", "BWMonthHandColor", "BWSubDialColor",
+        "BWMinHandBatLineColor", "BWHourHandColor", "BWSecondsHandColor", "BWMonthHandColor", "BWSubDialColor",
         "BWHourDigitsColor", "BWDateColor", "BWBatteryWeatherColor", "BWBTQTColor"
     ];
 
@@ -1933,8 +1953,15 @@ module.exports = function(minified) {
         var useWeather = config.getItemByMessageKey("UseWeather");
         if (useWeather) {
             useWeather.on('change', updateWeatherSectionVisibility);
+            useWeather.on('change', updateParkHandsVisibility);
         }
         updateWeatherSectionVisibility();
+
+        var parkHands = config.getItemByMessageKey("ShakeToParkHands");
+        if (parkHands) {
+            parkHands.on('change', updateParkHandsVisibility);
+        }
+        updateParkHandsVisibility();
 
         var enableDate = config.getItemByMessageKey("EnableDate");
         if (enableDate) {
