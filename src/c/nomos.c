@@ -1855,7 +1855,11 @@ static void draw_seconds_center(GContext *ctx, GColor minutes_color, GColor seco
 
 ///analogue hands
 static void draw_hour_hand(GContext *ctx, int angle, int length, int back_length, int rect_length_x, int rect_length_y, int corner_radius, GColor color) {
+  #ifdef PBL_RECT
   GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
+  #else
+  GRect bounds = layer_get_bounds(s_canvas_layer);
+  #endif
 
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
   GPoint origin_offset = GPoint(origin.x + config.hands_shadow, origin.y + config.hands_shadow);
@@ -1955,7 +1959,11 @@ static void draw_hour_hand(GContext *ctx, int angle, int length, int back_length
 }
 
 static void draw_minute_hand(GContext *ctx, int angle, int length, int back_length, int rect_length_x, int rect_length_y, int corner_radius, GColor color) {
+  #ifdef PBL_RECT
   GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
+  #else
+  GRect bounds = layer_get_bounds(s_canvas_layer);
+  #endif
   
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
   GPoint origin_offset = GPoint(origin.x + config.hands_shadow, origin.y + config.hands_shadow);
@@ -2058,7 +2066,12 @@ static void draw_minute_hand(GContext *ctx, int angle, int length, int back_leng
 
 
 static void draw_hand_center(GContext *ctx, GColor outer_color, GColor inner_color) {
+  
+  #ifdef PBL_RECT
   GRect bounds = layer_get_unobstructed_bounds(s_canvas_layer);
+  #else
+  GRect bounds = layer_get_bounds(s_canvas_layer);
+  #endif
   
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
   graphics_context_set_antialiased(ctx, true);
@@ -2076,6 +2089,7 @@ static void draw_major_tick (GContext *ctx, int angle, int length, GColor fill_c
   #else
   GRect bounds = layer_get_bounds (s_canvas_layer);
   GRect full_bounds = bounds;
+  (void)full_bounds;   // only some round-screen code uses it
   #endif
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
       GPoint p1;
@@ -2113,6 +2127,7 @@ static void draw_major_tick_inner_set (GContext *ctx, int angle, int length, GCo
   #else
   GRect bounds = layer_get_bounds (s_canvas_layer);
   GRect full_bounds = bounds;
+  (void)full_bounds;   // only some round-screen code uses it
   #endif
   
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
@@ -2151,6 +2166,7 @@ static void draw_minor_tick(GContext *ctx, int angle, GColor border_color) {
   #else
   GRect bounds = layer_get_bounds (s_canvas_layer);
   GRect full_bounds = bounds;
+  (void)full_bounds;   // only some round-screen code uses it
   #endif
 
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
@@ -2347,8 +2363,14 @@ static bool prv_fctx_begin(FContext *fctx, GContext *ctx) {
 
 static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   
+  #ifdef PBL_RECT
   GRect bounds = layer_get_unobstructed_bounds(layer);
   GRect full_bounds = layer_get_bounds(layer);
+  #else   // gabbro: Quick View doesn't shrink the face, so draw at full size underneath it
+  GRect bounds = layer_get_bounds(layer);
+  GRect full_bounds = bounds;
+  (void)full_bounds;   // only some round-screen code uses it
+  #endif
 
   FContext fctx;
   if (!prv_fctx_begin(&fctx, ctx)) {
@@ -2361,7 +2383,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
        for (int i = 1; i < 13; i++) {
         if (i % 2 == 0){
           fctx_begin_fill(&fctx);
-          fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h)) : config.font_size_digits* PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h));
+          fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
           fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
           char digit_string[6];
           int32_t digit_angle = i * 30 ;
@@ -2375,10 +2397,14 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                 digit_rotation = digit_angle_trig + TRIG_MAX_ANGLE / 2;
               }
 
-          fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h)) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h)) - config.digit_inset );
+          fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
         
           get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
+          #ifdef PBL_RECT
           FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
+          #else
+          FPoint center_digits = FPointI(full_bounds.size.w / 2 + 1, full_bounds.size.h / 2);
+          #endif
           FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
           fctx_set_rotation(&fctx, digit_rotation);
           fctx_set_offset(&fctx, p);
@@ -2392,7 +2418,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
          for (int i = 1; i < 13; i++) {
         if (i % 2 == 0 && i != 6){
           fctx_begin_fill(&fctx);
-          fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h)) : config.font_size_digits* PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h));
+          fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
           fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
           char digit_string[6];
           int32_t digit_angle = i * 30 ;
@@ -2406,10 +2432,14 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                 digit_rotation = digit_angle_trig + TRIG_MAX_ANGLE / 2;
               }
 
-          fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h)) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h)) - config.digit_inset );
+          fixed_t text_radius = INT_TO_FIXED(settings.Roman ? (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset - config.romanadjust/2: (bounds.size.w/2 * bounds.size.h/full_bounds.size.h) - config.digit_inset );
         
           get_digit_string(i, settings.Roman, digit_string, sizeof digit_string);
+          #ifdef PBL_RECT
           FPoint center_digits = FPointI(bounds.size.w / 2 + 1, bounds.size.h / 2);
+          #else
+          FPoint center_digits = FPointI(full_bounds.size.w / 2 + 1, full_bounds.size.h / 2);
+          #endif
           FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
           fctx_set_rotation(&fctx, digit_rotation);
           fctx_set_offset(&fctx, p);
@@ -2432,7 +2462,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
     FPoint fulldate_pos;
 
-    int font_size_date = config.font_size_date * PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h);
+    int font_size_date = config.font_size_date * bounds.size.h/full_bounds.size.h;
 
     int yOffset = config.yOffset;
     int yOffsetFctx = config.yOffsetFctx;
@@ -2510,7 +2540,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
             fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
             FPoint battery_pos;
             
-            int font_size_battery = config.font_size_battery * PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h);
+            int font_size_battery = config.font_size_battery * bounds.size.h/full_bounds.size.h;
             
             int s_battery_level = battery_state_service_peek().charge_percent;
             fctx_begin_fill(&fctx);
@@ -2520,7 +2550,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
               if (settings.EnableBatteryLine) {
 
                   battery_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 1));
-                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h));
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* bounds.size.h/full_bounds.size.h);
 
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
@@ -2532,7 +2562,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                 else { //shift the percentage text slightly when there's no battery line
 
                   battery_pos.x = INT_TO_FIXED((bounds.size.w / 2) );
-                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y)* PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h));
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y)* bounds.size.h/full_bounds.size.h);
 
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
@@ -2549,7 +2579,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
             fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
             FPoint battery_pos;
             
-            int font_size_battery = config.font_size_battery * PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h);
+            int font_size_battery = config.font_size_battery * bounds.size.h/full_bounds.size.h;
             
             int s_battery_level = battery_state_service_peek().charge_percent;
             fctx_begin_fill(&fctx);
@@ -2559,7 +2589,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
               if (settings.EnableBatteryLine) {
 
                   battery_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 1));
-                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h);
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z)* bounds.size.h/full_bounds.size.h);
 
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
@@ -2571,7 +2601,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                 else { //shift the percentage text slightly when there's no battery line
 
                   battery_pos.x = INT_TO_FIXED((bounds.size.w / 2) );
-                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y)* PBL_IF_ROUND_ELSE(1, bounds.size.h/full_bounds.size.h));
+                  battery_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y)* bounds.size.h/full_bounds.size.h);
 
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
@@ -2743,8 +2773,14 @@ static void layer_update_proc_tz(Layer *layer, GContext *ctx) {
 
 static void layer_update_proc_battery_line(Layer *layer, GContext *ctx) {
 
-    GRect bounds = layer_get_unobstructed_bounds(layer);
-    GRect full_bounds = layer_get_bounds(layer);
+  #ifdef PBL_RECT
+  GRect bounds = layer_get_unobstructed_bounds(layer);
+  GRect full_bounds = layer_get_bounds(layer);
+  #else   // gabbro: Quick View doesn't shrink the face, so draw at full size underneath it
+  GRect bounds = layer_get_bounds(layer);
+  GRect full_bounds = bounds;
+  (void)full_bounds;   // only some round-screen code uses it
+  #endif
 
     // If neither element is enabled in config, stop.
     if (!settings.EnableBattery && !settings.EnableBatteryLine) {
@@ -2756,10 +2792,10 @@ static void layer_update_proc_battery_line(Layer *layer, GContext *ctx) {
     // Draw battery line
    
     if (settings.EnableBatteryLine) {
-        int width_rect = (s_battery_level * config.battery_line) / 100 * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h);
+        int width_rect = (s_battery_level * config.battery_line) / 100 * bounds.size.h/full_bounds.size.h;
         int rect_x_pos = (bounds.size.w/2) - (width_rect/2);
 
-        GRect BatteryLineRect = GRect(rect_x_pos,config.BatteryLineYOffset * PBL_IF_ROUND_ELSE(1,bounds.size.h/full_bounds.size.h),width_rect, 2);
+        GRect BatteryLineRect = GRect(rect_x_pos,config.BatteryLineYOffset * bounds.size.h/full_bounds.size.h,width_rect, 2);
         graphics_context_set_antialiased(ctx, true);
         graphics_context_set_fill_color(ctx, PBL_IF_BW_ELSE(settings.BWMinHandBatLineColor, settings.BatteryLineColor));
         graphics_fill_rect(ctx,BatteryLineRect, 1, GCornersBottom);
@@ -2769,8 +2805,14 @@ static void layer_update_proc_battery_line(Layer *layer, GContext *ctx) {
 
 //Update procedure for the Bluetooth Icon (shows when disconnected) layer
 static void layer_update_proc_bt(Layer * layer, GContext * ctx){
+  #ifdef PBL_RECT
   GRect bounds = layer_get_unobstructed_bounds(layer);
   GRect full_bounds = layer_get_bounds(layer);
+  #else   // gabbro: Quick View doesn't shrink the face, so draw at full size underneath it
+  GRect bounds = layer_get_bounds(layer);
+  GRect full_bounds = bounds;
+  (void)full_bounds;   // only some round-screen code uses it
+  #endif
 
   if (!grect_equal(&full_bounds, &bounds)) {
     return;
@@ -2793,8 +2835,14 @@ static void layer_update_proc_bt(Layer * layer, GContext * ctx){
 //Update procedure for the QT Icon layer (shows when Quiet time is active)
 static void layer_update_proc_qt(Layer * layer, GContext * ctx){
 
-    GRect bounds = layer_get_unobstructed_bounds(layer);
-    GRect full_bounds = layer_get_bounds(layer);
+  #ifdef PBL_RECT
+  GRect bounds = layer_get_unobstructed_bounds(layer);
+  GRect full_bounds = layer_get_bounds(layer);
+  #else   // gabbro: Quick View doesn't shrink the face, so draw at full size underneath it
+  GRect bounds = layer_get_bounds(layer);
+  GRect full_bounds = bounds;
+  (void)full_bounds;   // only some round-screen code uses it
+  #endif
 
     if (!grect_equal(&full_bounds, &bounds)) {
       return;
@@ -2824,6 +2872,7 @@ static void hour_min_hands_canvas_update_proc(Layer *layer, GContext *ctx) {
   #else
   GRect bounds = layer_get_bounds (s_canvas_layer);
   GRect full_bounds = bounds;
+  (void)full_bounds;   // only some round-screen code uses it
   #endif
 
 
@@ -2919,6 +2968,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
   #else
   GRect bounds = layer_get_bounds (s_canvas_layer);
   GRect full_bounds = bounds;
+  (void)full_bounds;   // only some round-screen code uses it
   #endif
 
     if (!grect_equal(&full_bounds, &bounds)) {
@@ -3223,11 +3273,12 @@ static bool prv_build_picture_lut(uint8_t (*lut)[3], int style, ResHandle handle
 
 static const uint8_t PICTURE_BAYER[4][4] = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };
 
-// Draws background picture `style` straight into the frame buffer, one row at a time. The
+// Draws background picture `style` straight into the frame buffer, one row at a time, shifted
+// up by `y_offset` rows (so it can stay centred on the hands when Quick View shrinks the face). The
 // colour table and two row buffers (~1.2KB) are allocated here and freed before returning, so
 // nothing is held while the text layers need fctx's full-screen buffer. Returns false (and the
 // caller fills with the flat colour) if the resource is missing or wrong, or memory is short.
-static bool prv_draw_picture(GContext *ctx, int style, GRect area) {
+static bool prv_draw_picture(GContext *ctx, int style, GRect area, int y_offset) {
   uint32_t resource_id = prv_picture_resource(style);
   ResHandle handle = resource_id ? resource_get_handle(resource_id) : NULL;
   if (!handle) {
@@ -3265,11 +3316,14 @@ static bool prv_draw_picture(GContext *ctx, int style, GRect area) {
         continue;
       }
       // the source row(s) this screen row comes from
-      int src_y = mode == 0 ? y : (mode == 3 ? y % sh : y >> 1);
+      int py = y + y_offset;                         // the picture row shown on this screen row
+      if (py < 0) { py = 0; }
+      if (py > h - 1) { py = h - 1; }
+      int src_y = mode == 0 ? py : (mode == 3 ? py % sh : py >> 1);
       if (src_y >= sh) { src_y = sh - 1; }
       resource_load_byte_range(handle, data_offset + src_y * sw, row_a, sw);
       if (mode == 1) {
-        int k2 = (y & 1) ? src_y + 1 : src_y - 1;
+        int k2 = (py & 1) ? src_y + 1 : src_y - 1;
         if (k2 < 0) { k2 = 0; }
         if (k2 >= sh) { k2 = sh - 1; }
         resource_load_byte_range(handle, data_offset + k2 * sw, row_b, sw);
@@ -3311,8 +3365,14 @@ static bool prv_draw_picture(GContext *ctx, int style, GRect area) {
 ///update procedure for background
 static void bg_update_proc(Layer *layer, GContext *ctx) {
 
+  #ifdef PBL_RECT
   GRect bounds = layer_get_unobstructed_bounds(layer);
   GRect full_bounds = layer_get_bounds(layer);
+  #else   // gabbro: Quick View doesn't shrink the face, so draw at full size underneath it
+  GRect bounds = layer_get_bounds(layer);
+  GRect full_bounds = bounds;
+  (void)full_bounds;   // only some round-screen code uses it
+  #endif
 
   // The background always covers the whole screen, not just the unobstructed part: on round
   // screens Timeline Quick View doesn't cover the bottom of the circle, which would otherwise
@@ -3323,7 +3383,11 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
   bool drew_bitmap = false;
   #ifdef PBL_COLOR
   if (settings.BackgroundStyle >= 1 && settings.BackgroundStyle <= 9) {
-    drew_bitmap = prv_draw_picture(ctx, settings.BackgroundStyle, FullBackground);
+    // Rectangular watches: when Quick View shrinks the face, the hands move up to the middle
+    // of what's left, so move the picture up by the same amount to keep its centre on them.
+    // (Round watches don't shrink - see the bounds at the top of this function.)
+    int picture_shift = (full_bounds.size.h - bounds.size.h) / 2;
+    drew_bitmap = prv_draw_picture(ctx, settings.BackgroundStyle, FullBackground, picture_shift);
   }
   #endif
   if (!drew_bitmap) {
