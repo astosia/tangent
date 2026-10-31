@@ -300,8 +300,65 @@ Pebble.addEventListener('ready', function(e) {
     }
 });
 
+// Phone-connection timeline log: the watch sends one of these per event
+// (see the "Phone-connection timeline log" section in nomos.c).
+var TETHER_EVENT_LOST = 0;
+
+function payloadField(payload, name) {
+    if (name in payload) {
+        return payload[name];
+    }
+    var numeric = String(messageKeys[name]);
+    return numeric in payload ? payload[numeric] : undefined;
+}
+
+var TETHER_EVENT_TEST = 2;
+
+function insertConnectionPin(seq, type, timeSeconds) {
+    console.log("tether: phone got event seq=" + seq + " type=" + type + " time=" + timeSeconds);
+    var lost = type === TETHER_EVENT_LOST;
+    var test = type === TETHER_EVENT_TEST;
+    var pin = {
+        // Unique per event; includes the time so a storage reset can't clash.
+        id: 'tangent-bt-' + seq + '-' + timeSeconds,
+        time: new Date(timeSeconds * 1000).toISOString(),
+        layout: {
+            type: 'genericPin',
+            title: test ? 'Timeline test' : (lost ? 'Phone disconnected' : 'Phone reconnected'),
+            subtitle: 'tangent',
+            // Pins using WATCH_DISCONNECTED or GENERIC_CONFIRMATION were silently
+            // dropped on this setup, so every pin uses NOTIFICATION_FLAG, which works.
+            tinyIcon: 'system://images/NOTIFICATION_FLAG'
+        }
+    };
+    if (typeof Pebble.insertTimelinePin !== 'function') {
+        console.error("tether: this Pebble app doesn't support local timeline pins (no Pebble.insertTimelinePin)");
+        return;
+    }
+    try {
+        Pebble.insertTimelinePin(pin);
+        console.log("tether: inserted pin " + pin.id + " \"" + pin.layout.title + "\" at " + pin.time);
+    } catch (err) {
+        console.error("tether: insertTimelinePin threw: " + err);
+    }
+}
+
 // The watch periodically sends a dummy AppMessage (a single uint8 at key 0) to ask the phone for a fresh weather reading - see tick_handler()'s s_countdown logic in nomos.c.
+// It also sends connection-log events (TetherSeq/TetherType/TetherTime), which become timeline pins and must not trigger a weather refresh.
 Pebble.addEventListener('appmessage', function(e) {
-    console.debug("Received app message: " + JSON.stringify(e.payload, null, 2));
+    var payload = e.payload || {};
+    console.debug("Received app message: " + JSON.stringify(payload, null, 2));
+    var seq = payloadField(payload, 'TetherSeq');
+    if (seq !== undefined) {
+        // Only if the user has "Timeline pins for phone disconnections" on (the watch doesn't
+        // send these when it's off, but an event queued before switching it off might still arrive).
+        var settings = settingsForThisWatch() || {};
+        if (settings.TimelinePins) {
+            insertConnectionPin(seq, payloadField(payload, 'TetherType'), payloadField(payload, 'TetherTime'));
+        } else {
+            console.log("tether: timeline pins are off, ignoring event seq=" + seq);
+        }
+        return;
+    }
     refreshWeather(settingsForThisWatch());
 });

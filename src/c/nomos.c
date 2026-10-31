@@ -22,11 +22,7 @@
 //#define DEBUG         ///Use this for debugging and showing max size of complications
 ////remember to comment out before publishing!!!!
 #define SECONDS_TICK_INTERVAL_MS 1000
-#ifdef PBL_PLATFORM_APLITE
-  #define SMOOTH_SWEEP_INTERVAL_MS 1000  //how often the second hand updates when SmoothSweep is on
-#else
-  #define SMOOTH_SWEEP_INTERVAL_MS 200
-#endif
+#define SWEEP_RATE_DEFAULT 5   // Sweep Second Hand: second-hand updates per second (settings.SweepRate)
 
 
 // Main window and layers
@@ -44,6 +40,44 @@ static Layer *s_canvas_qt_icon;
 static Layer *s_canvas_battery;
 #ifdef HAS_WEATHER
 static Layer *s_canvas_weather;
+#endif
+
+// ---- Saved face (battery saver for the seconds hand) -------------------------
+// Pebble redraws every layer whenever any one of them changes, so with the seconds hand on the
+// whole face - background picture, ticks, anti-aliased digits and date, weather - was redrawn
+// every second (5 times a second with Sweep). Now the face minus the hands is saved whenever
+// something other than a hand changes, and each seconds frame just copies it back and draws the
+// seconds hand and hour/minute hands on top (see bg_update_proc and face_capture_update_proc).
+// Aplite hasn't the memory to spare, so it draws everything every time as before.
+#ifndef PBL_PLATFORM_APLITE
+#define FACE_CACHE
+#define FACE_CACHE_HEAP_MARGIN 2048   // leave at least this much heap free when keeping the saved face
+static Layer *s_face_capture_layer;
+static uint8_t *s_face_cache;          // the screen's bytes, row after row
+static bool s_face_cache_valid;        // false as soon as anything but a hand needs redrawing
+static bool s_face_cache_seconds;      // showSeconds when it was saved (the sub-dial depends on it)
+static GRect s_face_cache_unobstructed;// Quick View state when it was saved
+static bool s_fast_frame;              // this frame only redraws the hands
+#define SKIP_ON_FAST_FRAME() do { if (s_fast_frame) { return; } } while (0)
+
+// Every layer_mark_dirty / layer_set_hidden in this file goes through these (see the #defines),
+// so any change other than to the hands throws the saved face away.
+static void prv_mark_dirty(Layer *layer) {
+  if (layer != s_canvas_second_hand && layer != s_canvas_layer) {
+    s_face_cache_valid = false;
+  }
+  layer_mark_dirty(layer);
+}
+static void prv_set_hidden(Layer *layer, bool hidden) {
+  if (layer_get_hidden(layer) != hidden) {
+    s_face_cache_valid = false;
+  }
+  layer_set_hidden(layer, hidden);
+}
+#define layer_mark_dirty(layer) prv_mark_dirty(layer)
+#define layer_set_hidden(layer, hidden) prv_set_hidden(layer, hidden)
+#else
+#define SKIP_ON_FAST_FRAME() do { } while (0)
 #endif
 
 struct tm g_local_time;
@@ -168,7 +202,7 @@ typedef struct {
   int seconds_circle_centre_y;
   int SecondHandCentreOuterRadius;
   int SecondHandCentreInnerRadius;
-  GRect battery_arc_bounds[1];
+  //GRect battery_arc_bounds[1];
   int romanadjust;
   GRect IconNowRect[1];
   GRect IconNowRect2[1];
@@ -227,7 +261,7 @@ static const UIConfig config = {
 .seconds_circle_radius = 24+3+1,
 .seconds_circle_centre_x = 100,
 .seconds_circle_centre_y = 163-2-8+1,
-  .battery_arc_bounds = {{{51,98},{37,37}}},        //UV arc, right of centre, middle row
+//  .battery_arc_bounds = {{{51,98},{37,37}}},        //UV arc, right of centre, middle row
 .romanadjust = 2,
 .IconNowRect = {{{0,48},{98,22}}},
 .IconNowRect2 = {{{0,52},{98,22}}},
@@ -275,7 +309,7 @@ static const UIConfig config = {
 .seconds_circle_radius = 30 + 1,
 .seconds_circle_centre_x = 130,
 .seconds_circle_centre_y = 189-6-6-1-1,
-  .battery_arc_bounds = {{{80,112},{37,37}}},        //UV arc, right of centre, middle row
+//  .battery_arc_bounds = {{{80,112},{37,37}}},        //UV arc, right of centre, middle row
 .romanadjust = 0,
 .IconNowRect = {{{0,60},{128,22}}},
 .IconNowRect2 = {{{0,64},{128,22}}},
@@ -333,7 +367,7 @@ static const UIConfig config = {
 .seconds_circle_radius = 18,
 .seconds_circle_centre_x = 72,
 .seconds_circle_centre_y = 117-3,
-  .battery_arc_bounds = {{{76,48},{24,24}}},        //UV arc, right of centre, middle row
+//  .battery_arc_bounds = {{{76,48},{24,24}}},        //UV arc, right of centre, middle row
 .romanadjust = 1,
 .BTIconRect = {{{36,16},{36,20}}},
 .QTIconRect = {{{75,16},{36,20}}},
@@ -384,7 +418,7 @@ static const UIConfig config = {
 .seconds_circle_radius = 21,
 .seconds_circle_centre_x = 90,
 .seconds_circle_centre_y = 128-2-5,
-  .battery_arc_bounds = {{{55,79},{24,24}}},        //UV arc, right of centre, middle row
+  //  .battery_arc_bounds = {{{55,79},{24,24}}},        //UV arc, right of centre, middle row
 .romanadjust = 0,
 .BTIconRect = {{{54,17},{32,20}}},
 .QTIconRect = {{{97,16},{32,20}}},
@@ -443,7 +477,7 @@ static const UIConfig config = {
 .seconds_circle_radius = 18,
 .seconds_circle_centre_x = 72,
 .seconds_circle_centre_y = 117-3,
-  .battery_arc_bounds = {{{37,75},{24,24}}},        //UV arc, right of centre, middle row
+  //  .battery_arc_bounds = {{{37,75},{24,24}}},        //UV arc, right of centre, middle row
 .romanadjust = 1,
 .BTIconRect = {{{36,16},{36,20}}},
 .QTIconRect = {{{75,16},{36,20}}},
@@ -570,6 +604,8 @@ static void prv_default_settings(void) {
   settings.tz_offset = 0;
   settings.showremoteAMPM = true;
   settings.SmoothSweep = false;
+  settings.SweepRate = SWEEP_RATE_DEFAULT;
+  settings.TimelinePins = false;
   snprintf(settings.DateLanguage, sizeof(settings.DateLanguage), "%s", "auto");
   settings.ShowBTQTIcons = true;
   #ifdef PBL_COLOR
@@ -637,6 +673,17 @@ static bool second_hand_is_active(void) {
 }
 
 
+// How often Sweep moves the second hand (aplite: once a second, as without Sweep).
+static int prv_sweep_interval_ms(void) {
+  #ifdef PBL_PLATFORM_APLITE
+  return 1000;
+  #else
+  int rate = settings.SweepRate;
+  if (rate < 1 || rate > 5) { rate = SWEEP_RATE_DEFAULT; }
+  return 1000 / rate;
+  #endif
+}
+
 static void smooth_sweep_timer_handler(void *context) {
   s_smooth_sweep_timer = NULL;
 
@@ -644,7 +691,7 @@ static void smooth_sweep_timer_handler(void *context) {
     layer_mark_dirty(s_canvas_second_hand);
 
     // Register fixed interval directly
-    s_smooth_sweep_timer = app_timer_register(SMOOTH_SWEEP_INTERVAL_MS, smooth_sweep_timer_handler, NULL);
+    s_smooth_sweep_timer = app_timer_register(prv_sweep_interval_ms(), smooth_sweep_timer_handler, NULL);
   }
 }
 
@@ -655,9 +702,10 @@ static void start_smooth_sweep_timer(void) {
     time_ms(&now_sec, &now_ms);
 
     // Initial phase sync: align ONLY the first tick to the nearest ms interval boundary
-    int initial_delay = SMOOTH_SWEEP_INTERVAL_MS - (now_ms % SMOOTH_SWEEP_INTERVAL_MS);
+    int interval = prv_sweep_interval_ms();
+    int initial_delay = interval - (now_ms % interval);
     if (initial_delay < 50) {
-      initial_delay += SMOOTH_SWEEP_INTERVAL_MS;
+      initial_delay += interval;
     }
 
     s_smooth_sweep_timer = app_timer_register(initial_delay, smooth_sweep_timer_handler, NULL);
@@ -669,6 +717,13 @@ static void stop_smooth_sweep_timer(void) {
     app_timer_cancel(s_smooth_sweep_timer);
     s_smooth_sweep_timer = NULL;
   }
+}
+
+// Second ticks are only needed to move the seconds hand without Sweep: with Sweep its own
+// timer redraws the hand (from the clock), so second ticks would just wake the watch for nothing.
+static void prv_subscribe_ticks(void) {
+  bool second_ticks = showSeconds && !settings.SmoothSweep;
+  tick_timer_service_subscribe(second_ticks ? SECOND_UNIT : MINUTE_UNIT, tick_handler);
 }
 
 static void timeout_handler(void *context) {
@@ -749,12 +804,8 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
         s_timeout_timer = NULL;
       }
 
-      // Only subscribe to second ticks if not already subscribed
-      if (!showSeconds) {
-          tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
-      }
-      
       showSeconds = true;
+      prv_subscribe_ticks();
       start_smooth_sweep_timer();
       
       // Register a new timer to hide the seconds hand
@@ -785,31 +836,37 @@ static void prv_update_bt_icon_visibility(bool connected) {
   layer_set_hidden(s_canvas_bt_icon, !settings.ShowBTQTIcons || connected);
 }
 
+// A buzz (on disconnect, or on reconnect after a real outage) would itself register as a wrist
+// shake - revealing the seconds hand, or counting towards the weather double-shake - so the shake
+// listener is switched off while the watch vibrates and switched back on - only if something
+// still needs it - once it has stopped.
+#define VIBE_SHAKE_IGNORE_MS 1000
+static AppTimer *s_vibe_shake_timer;
+
+static void prv_vibe_shake_timer_callback(void *data) {
+  s_vibe_shake_timer = NULL;
+  prv_update_accel_tap_subscription();
+}
+
+static void prv_vibe_ignoring_shake(bool short_pulse) {
+  accel_tap_service_unsubscribe();
+  if (short_pulse) { vibes_short_pulse(); } else { vibes_double_pulse(); }
+  if (s_vibe_shake_timer) { app_timer_cancel(s_vibe_shake_timer); }
+  s_vibe_shake_timer = app_timer_register(VIBE_SHAKE_IGNORE_MS, prv_vibe_shake_timer_callback, NULL);
+}
+
 static void bluetooth_vibe_icon (bool connected) {
 
    prv_update_bt_icon_visibility(connected);
 
-   //layer_set_hidden(s_canvas_bt_icon, connected);
-
-    if (!connected && strcmp(settings.VibeMode, "2") != 0) {
-    if (strcmp(settings.VibeMode, "1") == 0 || !quiet_time_is_active()) {
-    if (settings.SecondsVisibleTime > 0 && settings.SecondsVisibleTime < 135) {
-      // Unsubscribe from accel_tap before the vibe
-      accel_tap_service_unsubscribe();
-      showSeconds = false;
-      stop_smooth_sweep_timer(); 
-    }
-      #ifdef PBL_PLATFORM_DIORITE
-      vibes_short_pulse();
-      #else
-      vibes_double_pulse();
-      #endif
-    }
-      if (settings.SecondsVisibleTime > 0 && settings.SecondsVisibleTime < 135) {
-      accel_tap_service_subscribe(accel_tap_handler);
-    }
+  if (!connected && strcmp(settings.VibeMode, "2") != 0 &&
+      (strcmp(settings.VibeMode, "1") == 0 || !quiet_time_is_active())) {
+    #ifdef PBL_PLATFORM_DIORITE
+    prv_vibe_ignoring_shake(true);
+    #else
+    prv_vibe_ignoring_shake(false);
+    #endif
   }
-
 }
 
 #ifdef HAS_WEATHER
@@ -887,10 +944,220 @@ static void prv_weather_reconnect_delay_callback(void *data) {
 }
 #endif
 
-// Called whenever the phone's Bluetooth connection to the watch changes. 
+// ---------------------------------------------------------------------------
+// Phone-connection timeline log
+//
+// When the phone comes back after being gone for at least TETHER_MIN_GAP_SEC,
+// two events are queued: "disconnected" (at the time it dropped) and
+// "reconnected" (now). They're sent to the phone one at a time and
+// src/pkjs/index.js turns each into a timeline pin. Pins can only be created
+// once the phone is reachable again, so both arrive after the reconnect.
+// Everything is persisted, so nothing is lost if the watchface restarts.
+// ---------------------------------------------------------------------------
+#define TETHER_LOG_KEY         300   // TetherLog blob
+#define TETHER_DROP_KEY        301   // time of an unpaired disconnect (0 = none)
+#define TETHER_MIN_GAP_SEC     10    // ignore Bluetooth blips shorter than this
+#define TETHER_RING            8
+#define TETHER_SEND_DELAY_MS   6000  // after reconnect (weather asks at 3s)
+#define TETHER_RETRY_MS        3000
+#define TETHER_MAX_RETRIES     5
+#define TETHER_EVENT_LOST      0
+#define TETHER_EVENT_BACK      1
+#define TETHER_EVENT_TEST      2
+
+// Set to 1 to send one "Timeline test" pin (5 minutes in the future) every
+// time the watchface starts, so the whole path can be checked with
+// `pebble logs` without disconnecting. Set back to 0 when done.
+#define TETHER_TEST_ON_LAUNCH  0
+
+typedef struct {
+  int32_t seq;
+  int32_t type;
+  int32_t time;
+} TetherEvent;
+
+typedef struct {
+  int32_t next_seq;   // seq of the newest queued event
+  int32_t sent_seq;   // seq of the newest event the phone has received
+  TetherEvent ev[TETHER_RING];
+} TetherLog;
+
+static TetherLog s_tether;
+static AppTimer *s_tether_timer;
+static bool s_tether_inflight;
+static int32_t s_tether_inflight_seq;
+static int s_tether_retries;
+
+static void prv_tether_save(void) {
+  persist_write_data(TETHER_LOG_KEY, &s_tether, sizeof(s_tether));
+}
+
+static void prv_tether_add(int32_t type, time_t when) {
+  int32_t seq = ++s_tether.next_seq;
+  TetherEvent *e = &s_tether.ev[seq % TETHER_RING];
+  e->seq = seq;
+  e->type = type;
+  e->time = (int32_t)when;
+}
+
+static void prv_tether_send_next(void);
+
+static void prv_tether_timer_callback(void *data) {
+  s_tether_timer = NULL;
+  prv_tether_send_next();
+}
+
+static void prv_tether_schedule(uint32_t ms) {
+  if (s_tether_timer) { app_timer_cancel(s_tether_timer); }
+  s_tether_timer = app_timer_register(ms, prv_tether_timer_callback, NULL);
+}
+
+static void prv_tether_retry_later(void) {
+  APP_LOG(APP_LOG_LEVEL_WARNING, "tether: send not possible yet, retry %d/%d", s_tether_retries + 1, TETHER_MAX_RETRIES);
+  if (++s_tether_retries <= TETHER_MAX_RETRIES) {
+    prv_tether_schedule(TETHER_RETRY_MS);
+  }
+  // else give up until the next reconnect or watchface launch
+}
+
+// Sends the oldest event the phone hasn't had yet (one message at a time).
+static void prv_tether_send_next(void) {
+  if (!settings.TimelinePins) {
+    // Pins switched off: drop anything still waiting rather than sending it later.
+    if (s_tether.sent_seq != s_tether.next_seq) {
+      s_tether.sent_seq = s_tether.next_seq;
+      prv_tether_save();
+    }
+    return;
+  }
+  if (s_tether_inflight || !connection_service_peek_pebble_app_connection()) {
+    return;
+  }
+  if (s_tether.sent_seq < s_tether.next_seq - TETHER_RING) {
+    s_tether.sent_seq = s_tether.next_seq - TETHER_RING;  // older ones were overwritten
+  }
+  while (s_tether.sent_seq < s_tether.next_seq) {
+    int32_t seq = s_tether.sent_seq + 1;
+    TetherEvent *e = &s_tether.ev[seq % TETHER_RING];
+    if (e->seq != seq) {        // slot doesn't hold it; skip
+      s_tether.sent_seq = seq;
+      prv_tether_save();
+      continue;
+    }
+    DictionaryIterator *iter;
+    if (app_message_outbox_begin(&iter) != APP_MSG_OK) {  // e.g. a weather request in flight
+      prv_tether_retry_later();
+      return;
+    }
+    dict_write_int32(iter, MESSAGE_KEY_TetherSeq, e->seq);
+    dict_write_int32(iter, MESSAGE_KEY_TetherType, e->type);
+    dict_write_int32(iter, MESSAGE_KEY_TetherTime, e->time);
+    if (app_message_outbox_send() != APP_MSG_OK) {
+      prv_tether_retry_later();
+      return;
+    }
+    APP_LOG(APP_LOG_LEVEL_INFO, "tether: sending event seq=%d type=%d", (int)e->seq, (int)e->type);
+    s_tether_inflight = true;
+    s_tether_inflight_seq = seq;
+    return;
+  }
+}
+
+static void prv_outbox_sent_handler(DictionaryIterator *iter, void *context) {
+  if (s_tether_inflight) {        // (weather requests also land here; ignore those)
+    APP_LOG(APP_LOG_LEVEL_INFO, "tether: phone received event seq=%d", (int)s_tether_inflight_seq);
+    s_tether_inflight = false;
+    s_tether.sent_seq = s_tether_inflight_seq;
+    s_tether_retries = 0;
+    prv_tether_save();
+    prv_tether_send_next();
+  }
+}
+
+static void prv_outbox_failed_handler(DictionaryIterator *iter, AppMessageResult reason, void *context) {
+  if (s_tether_inflight) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "tether: phone did not take event seq=%d (reason %d)", (int)s_tether_inflight_seq, (int)reason);
+    s_tether_inflight = false;
+    prv_tether_retry_later();
+  }
+}
+
+static int32_t prv_tether_pending_drop(void) {
+  return persist_exists(TETHER_DROP_KEY) ? persist_read_int(TETHER_DROP_KEY) : 0;
+}
+
+// Returns true after a real outage (one at least TETHER_MIN_GAP_SEC long); the disconnect /
+// reconnect pair is only logged for the timeline when the Timeline pins setting is on.
+static bool prv_tether_connection_changed(bool connected) {
+  time_t now = time(NULL);
+  if (!connected) {
+    if (prv_tether_pending_drop() == 0) {   // keep the earliest drop time
+      persist_write_int(TETHER_DROP_KEY, (int32_t)now);
+    }
+    return false;
+  }
+  bool logged = false;
+  int32_t dropped = prv_tether_pending_drop();
+  if (dropped > 0) {
+    persist_write_int(TETHER_DROP_KEY, 0);
+    if (now - dropped >= TETHER_MIN_GAP_SEC) {
+      if (settings.TimelinePins) {   // the outage still counts (reconnect buzz) when pins are off
+        prv_tether_add(TETHER_EVENT_LOST, (time_t)dropped);
+        prv_tether_add(TETHER_EVENT_BACK, now);
+        prv_tether_save();
+      }
+      logged = true;
+    }
+  }
+  s_tether_retries = 0;
+  prv_tether_schedule(TETHER_SEND_DELAY_MS);
+  return logged;
+}
+
+// Called once at launch: load the log and catch up on anything missed while
+// the watchface wasn't running.
+static void prv_tether_init(void) {
+  if (persist_read_data(TETHER_LOG_KEY, &s_tether, sizeof(s_tether)) != (int)sizeof(s_tether)) {
+    memset(&s_tether, 0, sizeof(s_tether));
+  }
+  if (connection_service_peek_pebble_app_connection()) {
+    // Reconnected while another app/face was showing: pair it with "now".
+    prv_tether_connection_changed(true);
+  } else if (prv_tether_pending_drop() == 0) {
+    // Already disconnected at launch; the real drop time is unknown, so use now.
+    persist_write_int(TETHER_DROP_KEY, (int32_t)time(NULL));
+  }
+#if TETHER_TEST_ON_LAUNCH
+  APP_LOG(APP_LOG_LEVEL_INFO, "tether: queueing a test pin");
+  prv_tether_add(TETHER_EVENT_LOST, time(NULL) - 5 * 60);   // real "disconnected" pin
+  prv_tether_add(TETHER_EVENT_BACK, time(NULL) - 4 * 60);   // real "reconnected" pin
+  prv_tether_add(TETHER_EVENT_TEST, time(NULL) - 3 * 60);   // known-good test pin
+  prv_tether_save();
+  s_tether_retries = 0;
+  prv_tether_schedule(TETHER_SEND_DELAY_MS);
+#endif
+}
+
+// Short buzz on reconnect after a real outage, following the same VibeMode /
+// Quiet Time rules as the disconnect buzz.
+static void prv_reconnect_vibe(void) {
+  if (strcmp(settings.VibeMode, "2") == 0) {
+    return;
+  }
+  if (strcmp(settings.VibeMode, "1") != 0 && quiet_time_is_active()) {
+    return;
+  }
+  prv_vibe_ignoring_shake(true);   // so the buzz doesn't count as a shake
+}
+
+// Called whenever the phone's Bluetooth connection to the watch changes.
 // (This is a live reconnect, not app launch, so it's independent of "Refresh weather on launch".  That setting still controls whether launching the watchface itself triggers a fetch.)
 static void bluetooth_connection_handler(bool connected) {
   bluetooth_vibe_icon(connected);
+
+  if (prv_tether_connection_changed(connected) && connected) {
+    prv_reconnect_vibe();
+  }
 
   #ifdef HAS_WEATHER
   if (connected && settings.UseWeather) {
@@ -918,6 +1185,13 @@ static void prv_load_settings(void) {
     prv_set_picture_default_colours(settings.BackgroundStyle);
   }
   #endif
+
+  if (bytes_read <= (int)offsetof(ClaySettings, SweepRate)) {
+    settings.SweepRate = SWEEP_RATE_DEFAULT;   // saved before the sweep speed could be chosen
+  }
+  if (bytes_read <= (int)offsetof(ClaySettings, TimelinePins)) {
+    settings.TimelinePins = false;             // saved before timeline pins were optional
+  }
 
   #ifdef HAS_WEATHER
   if (persist_exists(WEATHER_FETCH_EPOCH_KEY)) {
@@ -1095,6 +1369,8 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *remoteampm_t = dict_find(iter, MESSAGE_KEY_showremoteAMPM);
 
   Tuple *smoothsweep_t = dict_find(iter, MESSAGE_KEY_SmoothSweep);
+  Tuple *sweeprate_t = dict_find(iter, MESSAGE_KEY_SweepRate);
+  Tuple *timelinepins_t = dict_find(iter, MESSAGE_KEY_TimelinePins);
   Tuple *datelang_t = dict_find(iter, MESSAGE_KEY_DateLanguage);
 
   ///////Weather
@@ -1218,6 +1494,15 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   if (smoothsweep_t) {
       settings.SmoothSweep = smoothsweep_t->value->int32 == 1;
+  }
+  if (sweeprate_t) {
+      int rate = sweeprate_t->type == TUPLE_CSTRING ? atoi(sweeprate_t->value->cstring) : (int)sweeprate_t->value->int32;
+      if (rate >= 1 && rate <= 5) {
+        settings.SweepRate = rate;
+      }
+  }
+  if (timelinepins_t) {
+      settings.TimelinePins = timelinepins_t->value->int32 == 1;
   }
 
   if (subdialchoice_t) {
@@ -1390,7 +1675,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
       showSeconds = true;
       start_smooth_sweep_timer();
         tick_timer_service_unsubscribe();
-        tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+        prv_subscribe_ticks();
         // Unsubscribe from accel_tap_service as it's not needed
         accel_tap_service_unsubscribe();
 
@@ -1399,7 +1684,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
       showSeconds = true;
       start_smooth_sweep_timer();
         tick_timer_service_unsubscribe();
-        tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+        prv_subscribe_ticks();
         s_timeout_timer = app_timer_register(SECONDS_TICK_INTERVAL_MS * settings.SecondsVisibleTime, timeout_handler, NULL);
         // Subscribe to accel_tap_service to reset the timer
         accel_tap_service_subscribe(accel_tap_handler);
@@ -2221,6 +2506,7 @@ static void get_digit_string(int i, bool roman, char *out, size_t out_size) {
 
 #ifdef PBL_PLATFORM_APLITE //DON'T use FCTX a second time on Aplite: also use on Diorite and Flint as fctx is less efficient
 static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
+  SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
   
   GRect bounds = layer_get_unobstructed_bounds(s_date_battery_logo_layer);
 
@@ -2362,6 +2648,7 @@ static bool prv_fctx_begin(FContext *fctx, GContext *ctx) {
 }
 
 static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
+  SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
   
   #ifdef PBL_RECT
   GRect bounds = layer_get_unobstructed_bounds(layer);
@@ -2659,6 +2946,7 @@ static void layer_update_proc_seconds_hand(Layer *layer, GContext *ctx) {
 }
 
 static void layer_update_proc_complication(Layer *layer, GContext *ctx) {
+  SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
 
     if ((settings.SubDialChoice != 3 && 
     settings.SubDialChoice != 1 && settings.SubDialChoice != 2 && settings.SubDialChoice != 6)) {
@@ -2682,6 +2970,7 @@ static void layer_update_proc_complication(Layer *layer, GContext *ctx) {
 
 
 static void layer_update_proc_month_hand(Layer *layer, GContext *ctx) {
+  SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
 
     if(settings.SubDialChoice != 3 && settings.SubDialChoice != 6 && settings.SubDialChoice != 4){
     return;
@@ -2716,6 +3005,7 @@ static void layer_update_proc_month_hand(Layer *layer, GContext *ctx) {
 }
 
 static void layer_update_proc_tz(Layer *layer, GContext *ctx) {
+  SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
 
     if(settings.SubDialChoice != 5 ){
     return;
@@ -2772,6 +3062,7 @@ static void layer_update_proc_tz(Layer *layer, GContext *ctx) {
 
 
 static void layer_update_proc_battery_line(Layer *layer, GContext *ctx) {
+  SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
 
   #ifdef PBL_RECT
   GRect bounds = layer_get_unobstructed_bounds(layer);
@@ -2805,6 +3096,7 @@ static void layer_update_proc_battery_line(Layer *layer, GContext *ctx) {
 
 //Update procedure for the Bluetooth Icon (shows when disconnected) layer
 static void layer_update_proc_bt(Layer * layer, GContext * ctx){
+  SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
   #ifdef PBL_RECT
   GRect bounds = layer_get_unobstructed_bounds(layer);
   GRect full_bounds = layer_get_bounds(layer);
@@ -2834,6 +3126,7 @@ static void layer_update_proc_bt(Layer * layer, GContext * ctx){
 
 //Update procedure for the QT Icon layer (shows when Quiet time is active)
 static void layer_update_proc_qt(Layer * layer, GContext * ctx){
+  SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
 
   #ifdef PBL_RECT
   GRect bounds = layer_get_unobstructed_bounds(layer);
@@ -2957,6 +3250,7 @@ static void hour_min_hands_canvas_update_proc(Layer *layer, GContext *ctx) {
 ////////weather updates - emery and gabbro only
 #ifdef HAS_WEATHER
 static void weather_update_proc(Layer *layer, GContext *ctx) {
+  SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
     
     if (!settings.UseWeather) {
       return;
@@ -3363,7 +3657,88 @@ static bool prv_draw_picture(GContext *ctx, int style, GRect area, int y_offset)
 #endif
 
 ///update procedure for background
+#ifdef FACE_CACHE
+// Bytes [*start, *start+len) of a screen row (round screens' rows are shorter at top and bottom).
+static int prv_face_row(GBitmapDataRowInfo *row, int *start) {
+  #ifdef PBL_COLOR
+  *start = row->min_x;
+  return row->max_x - row->min_x + 1;
+  #else
+  *start = row->min_x >> 3;   // 1 bit per pixel
+  return (row->max_x >> 3) - *start + 1;
+  #endif
+}
+
+// Copies the screen into the saved face (save) or the saved face back onto the screen.
+static bool prv_face_copy(GContext *ctx, bool save) {
+  GBitmap *fb = graphics_capture_frame_buffer(ctx);
+  if (!fb) { return false; }
+  int h = gbitmap_get_bounds(fb).size.h;
+  int start;
+  if (save && !s_face_cache) {
+    size_t total = 0;
+    for (int y = 0; y < h; y++) {
+      GBitmapDataRowInfo row = gbitmap_get_data_row_info(fb, y);
+      total += prv_face_row(&row, &start);
+    }
+    size_t free_before = heap_bytes_free();
+    if (free_before >= total + FACE_CACHE_HEAP_MARGIN) {
+      s_face_cache = malloc(total);
+    }
+    static bool s_logged;   // say once per launch whether it fits (shows with pebble install --logs)
+    if (!s_logged) {
+      s_logged = true;
+      APP_LOG(APP_LOG_LEVEL_INFO, "saved face: %s (%d bytes, %d free)", s_face_cache ? "on" : "no room",
+              (int)total, (int)free_before);
+    }
+    if (!s_face_cache) {   // not enough memory: just draw everything every frame, as before
+      graphics_release_frame_buffer(ctx, fb);
+      return false;
+    }
+  }
+  uint8_t *p = s_face_cache;
+  for (int y = 0; y < h; y++) {
+    GBitmapDataRowInfo row = gbitmap_get_data_row_info(fb, y);
+    int len = prv_face_row(&row, &start);
+    if (save) { memcpy(p, row.data + start, len); }
+    else      { memcpy(row.data + start, p, len); }
+    p += len;
+  }
+  graphics_release_frame_buffer(ctx, fb);
+  return true;
+}
+
+// Sits just above the face layers and below the seconds hand and hour/minute hands: after a full
+// redraw, saves the face so the following seconds frames can reuse it.
+static void face_capture_update_proc(Layer *layer, GContext *ctx) {
+  if (s_fast_frame || !second_hand_is_active()) { return; }
+  if (prv_face_copy(ctx, true)) {
+    s_face_cache_valid = true;
+    s_face_cache_seconds = showSeconds;
+    s_face_cache_unobstructed = layer_get_unobstructed_bounds(layer);
+  }
+}
+#endif
+
 static void bg_update_proc(Layer *layer, GContext *ctx) {
+
+  #ifdef FACE_CACHE
+  // Only the hands have moved since the face was saved: put it back and let the hand layers draw.
+  GRect unobstructed = layer_get_unobstructed_bounds(layer);
+  s_fast_frame = s_face_cache && s_face_cache_valid && s_face_cache_seconds == showSeconds
+                 && second_hand_is_active() && grect_equal(&unobstructed, &s_face_cache_unobstructed);
+  if (s_fast_frame) {
+    if (prv_face_copy(ctx, false)) { return; }
+    s_fast_frame = false;
+  }
+  // A full redraw: let the old saved face go first, so the anti-aliased text gets the memory it
+  // needs (face_capture_update_proc saves a new one after the face layers have drawn).
+  if (s_face_cache) {
+    free(s_face_cache);
+    s_face_cache = NULL;
+  }
+  s_face_cache_valid = false;
+  #endif
 
   #ifdef PBL_RECT
   GRect bounds = layer_get_unobstructed_bounds(layer);
@@ -3475,11 +3850,11 @@ static void prv_window_load(Window *window) {
         if (settings.SubDialChoice == 1) {
         showSeconds = true;
         start_smooth_sweep_timer();
-        tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+        prv_subscribe_ticks();
         } else if (settings.SubDialChoice == 2 || settings.SubDialChoice == 6){
         showSeconds = true;
         start_smooth_sweep_timer();
-        tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+        prv_subscribe_ticks();
         s_timeout_timer = app_timer_register(1000*settings.SecondsVisibleTime, timeout_handler,NULL);
         accel_tap_service_subscribe(accel_tap_handler);
         }
@@ -3518,7 +3893,6 @@ static void prv_window_load(Window *window) {
   layer_add_child(window_layer, s_bg_layer); //backforound, circles, major tick shoadow &tickmask
   layer_add_child(window_layer, s_canvas_comp_bg);
   layer_add_child(window_layer, s_canvas_month_hand);  //month hand
-  layer_add_child(window_layer, s_canvas_second_hand);  //second hand
   layer_add_child(window_layer, s_canvas_tz);  //2nd timezone
   layer_add_child(window_layer, s_canvas_bt_icon);
   layer_add_child(window_layer, s_canvas_qt_icon);
@@ -3527,6 +3901,14 @@ static void prv_window_load(Window *window) {
   layer_add_child(window_layer, s_canvas_weather);
   #endif
   layer_add_child(window_layer, s_canvas_battery); //battery line
+  // Everything above here is the face, saved between seconds frames (see FACE_CACHE); the
+  // seconds hand and hour/minute hands go on top and are drawn every frame.
+  #ifdef FACE_CACHE
+  s_face_capture_layer = layer_create(bounds);
+  layer_set_update_proc(s_face_capture_layer, face_capture_update_proc);
+  layer_add_child(window_layer, s_face_capture_layer);
+  #endif
+  layer_add_child(window_layer, s_canvas_second_hand);  //second hand
   layer_add_child(window_layer, s_canvas_layer);  //hour and minute hands
  
   bluetooth_vibe_icon(connection_service_peek_pebble_app_connection());
@@ -3574,6 +3956,7 @@ static void prv_window_unload(Window *window) {
   if (s_park_hands_timer) { app_timer_cancel(s_park_hands_timer); s_park_hands_timer = NULL; }
   s_hands_parked = false;
   #endif
+  if (s_vibe_shake_timer) { app_timer_cancel(s_vibe_shake_timer); s_vibe_shake_timer = NULL; }
 
   accel_tap_service_unsubscribe();
   connection_service_unsubscribe();
@@ -3594,6 +3977,11 @@ static void prv_window_unload(Window *window) {
   layer_destroy(s_canvas_bt_icon);
   layer_destroy(s_canvas_qt_icon);
   layer_destroy(s_date_battery_logo_layer);
+  #ifdef FACE_CACHE
+  layer_destroy(s_face_capture_layer);
+  if (s_face_cache) { free(s_face_cache); s_face_cache = NULL; }
+  s_face_cache_valid = false;
+  #endif
   #ifndef PBL_PLATFORM_APLITE
   ffont_destroy(FCTX_Font);
   #endif
@@ -3630,8 +4018,12 @@ static void prv_init(void) {
   // Memory is tight here: on chalk every KB counts towards fctx's ~26KB text buffer.
   const uint32_t inbox_size = 1024;
   #endif
-  app_message_open(inbox_size, dict_calc_buffer_size(1, sizeof(uint8_t)));
+  // Outbox: big enough for a timeline-log event (3 x int32); the weather ping is smaller.
+  app_message_open(inbox_size, dict_calc_buffer_size(3, sizeof(int32_t)));
   app_message_register_inbox_received(prv_inbox_received_handler);
+  app_message_register_outbox_sent(prv_outbox_sent_handler);
+  app_message_register_outbox_failed(prv_outbox_failed_handler);
+  prv_tether_init();
 
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers) {

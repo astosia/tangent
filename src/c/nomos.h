@@ -95,4 +95,8 @@ typedef struct ClaySettings {
   GColor PicColor5;   // painted rainbow stops 5-7
   GColor PicColor6;
   GColor PicColor7;
+  // Sweep Second Hand updates per second (1-5); added after the picture colours (see prv_load_settings)
+  uint8_t SweepRate;
+  // Phone disconnect/reconnect timeline pins (see "Phone-connection timeline log" in nomos.c)
+  bool TimelinePins;
 } __attribute__((__packed__)) ClaySettings;

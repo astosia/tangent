@@ -171,6 +171,13 @@ module.exports = [
           ]
         },
         {
+        "type": "toggle",
+        "messageKey": "TimelinePins",
+        "label": "Timeline pins for phone disconnections",
+        "description": "Adds 'Phone disconnected' and 'Phone reconnected' pins to your timeline whenever the phone is out of reach, so you can see when and for how long. Pins are added when the phone reconnects",
+        "defaultValue": false
+        },
+        {
         "type": "text",
         "id": "WATCH_PREVIEW_3",
         "defaultValue": ""
@@ -240,8 +247,22 @@ module.exports = [
         "label": "Sweep Second Hand",
         "messageKey": "SmoothSweep",
         "capabilities": ["NOT_PLATFORM_APLITE"],
-        "description": "Updates the second hand 5 times per second to give a smoother movement - will reduce battery life!",
+        "description": "Moves the second hand several times per second for a smoother movement (see Sweep speed) - uses more battery than ticking once a second",
         "defaultValue": false
+      },
+      {
+        "type": "select",
+        "messageKey": "SweepRate",
+        "label": "Sweep speed",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "description": "How many times per second the swept second hand moves. Higher = smoother, but uses more battery",
+        "defaultValue": "5",
+        "options": [
+          { "label": "5 per second (smoothest)", "value": "5" },
+          { "label": "4 per second", "value": "4" },
+          { "label": "3 per second", "value": "3" },
+          { "label": "2 per second (saves battery)", "value": "2" }
+        ]
       },
       {
         "type": "heading",

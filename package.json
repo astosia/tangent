@@ -1,7 +1,7 @@
 {
   "name": "tangent",
   "author": "astosia",
-  "version": "4.8.2",
+  "version": "4.9.0",
   "keywords": [
     "pebble",
     "watchface",
@@ -91,6 +91,8 @@
       "showremoteAMPM",
       "SubDialChoice",
       "SmoothSweep",
+      "SweepRate",
+      "TimelinePins",
       "WeatherProv",
       "Lat",
       "Long",
@@ -126,7 +128,10 @@
       "PicColor5",
       "PicColor6",
       "PicColor7",
-      "PicColorMemory"
+      "PicColorMemory",
+      "TetherSeq",
+      "TetherType",
+      "TetherTime"
     ],
     "resources": {
       "media": [

@@ -686,6 +686,10 @@ module.exports = function(minified) {
                 setVisible(config.getItemByMessageKey(key), visible);
             });
         });
+        // Sweep speed: only while the seconds hand shows and Sweep is on
+        var sweep = config.getItemByMessageKey("SmoothSweep");
+        setVisible(config.getItemByMessageKey("SweepRate"),
+                   [1, 2, 6].indexOf(choice) !== -1 && !!(sweep && sweep.get()));
     };
 
     var maybeAutoFetchTimezones = function() {
@@ -2164,6 +2168,10 @@ module.exports = function(minified) {
         if (subdial) {
             subdial.on('change', updateSubdialSectionVisibility);
             subdial.on('change', maybeAutoFetchTimezones);
+        }
+        var smoothSweep = config.getItemByMessageKey("SmoothSweep");
+        if (smoothSweep) {
+            smoothSweep.on('change', updateSubdialSectionVisibility);
         }
         updateSubdialSectionVisibility();
         maybeAutoFetchTimezones();
