@@ -10,9 +10,7 @@ module.exports = function(minified) {
     var timezonesJSON = 0; // 0 is unset
     var timezonesList = [];
     var built = false;
-    var eventsWired = false;
     var tzDebug = "Ready.";
-    var suggestionBox = null;
 
     var getInputElement = function(item) {
         return item.$manipulatorTarget[0] || item.$manipulatorTarget;
@@ -72,18 +70,26 @@ module.exports = function(minified) {
         box.style.display = 'block';
     };
 
-    var hideSuggestions = function() {
-        if (suggestionBox) suggestionBox.style.display = 'none';
+    // The timezone pickers: the 2nd timezone (sub-dial and text rows) and the 3rd (text rows).
+    // Each is a search box (id) and a hidden copy of the chosen zone (state).
+    // The sub-dial's 2nd timezone, and each complication slot's own (slots 1, 3 and 4: the top slot
+    // and the two text rows; the second top row is too short for a time zone)
+    var TZ_PICKERS = [{ id: "TZ_ID", state: "TZ_ID_STATE" }, { id: "SlotTZ1", state: "SlotTZState1" },
+                      { id: "SlotTZ3", state: "SlotTZState3" }, { id: "SlotTZ4", state: "SlotTZState4" }];
+
+    // Each search box has its own suggestion list, kept on the box itself
+    var hideSuggestions = function(inputElement) {
+        if (inputElement && inputElement.tzSuggestions) inputElement.tzSuggestions.style.display = 'none';
     };
 
     var showSuggestions = function(matches, inputElement, item, idstate) {
-        if (!suggestionBox) suggestionBox = createSuggestionBox(inputElement, 'tz-suggestions');
+        if (!inputElement.tzSuggestions) inputElement.tzSuggestions = createSuggestionBox(inputElement, 'tz-suggestions');
 
-        renderSuggestions(suggestionBox, matches, function(zone) { return zone; }, function(zone) {
+        renderSuggestions(inputElement.tzSuggestions, matches, function(zone) { return zone; }, function(zone) {
             inputElement.value = zone;
             item.set(zone);
             idstate.set(zone);
-            hideSuggestions();
+            hideSuggestions(inputElement);
         });
     };
 
@@ -123,8 +129,8 @@ module.exports = function(minified) {
     };
 
     var wireInputEvents = function(item, idstate) {
-        if (eventsWired) return;
-        eventsWired = true;
+        if (item.tzWired) return;
+        item.tzWired = true;
 
         var inputElement = getInputElement(item);
         inputElement.setAttribute('autocomplete', 'off');
@@ -143,18 +149,13 @@ module.exports = function(minified) {
             // Delay so a suggestion's mousedown handler can run first.
             setTimeout(function() {
                 validateAndMaybeClear(inputElement, item, idstate);
-                hideSuggestions();
+                hideSuggestions(inputElement);
             }, 150);
         });
     };
 
     var postBuild = function(wasError) {
-        var item = config.getItemByMessageKey("TZ_ID");
-        var idstate = config.getItemByMessageKey("TZ_ID_STATE");
         var debug = config.getItemById("TZ_DEBUG");
-
-        if (!item || !idstate) return;
-
         if (debug) {
             if (wasError) {
                 debug.show();
@@ -164,32 +165,34 @@ module.exports = function(minified) {
             debug.set(tzDebug + "<br>Click 'Fetch Timezones' to retry.");
         }
 
-        if (idstate.get()) {
-            item.set(idstate.get());
-        }
+        TZ_PICKERS.forEach(function(picker) {
+            var item = config.getItemByMessageKey(picker.id);
+            var idstate = config.getItemByMessageKey(picker.state);
+            if (!item || !idstate) return;   // (the 3rd timezone isn't on aplite's page)
 
-        item.on('change', function() {
-            idstate.set(item.get());
+            if (idstate.get()) {
+                item.set(idstate.get());
+            }
+            if (!item.tzChangeWired) {
+                item.tzChangeWired = true;
+                item.on('change', function() {
+                    idstate.set(item.get());
+                });
+            }
+            wireInputEvents(item, idstate);
         });
-
-        wireInputEvents(item, idstate);
     };
 
     var loadTimezones = function(json) {
-        var item = config.getItemByMessageKey("TZ_ID");
-        var idstate = config.getItemByMessageKey("TZ_ID_STATE");
-
         try {
             timezonesList = JSON.parse(json);
 
-            var inputElement = getInputElement(item);
-            inputElement.setAttribute('placeholder', 'Start typing a city or region...');
+            TZ_PICKERS.forEach(function(picker) {
+                var item = config.getItemByMessageKey(picker.id);
+                if (item) getInputElement(item).setAttribute('placeholder', 'Start typing a city or region...');
+            });
 
             tzDebug = "Loaded " + timezonesList.length + " zones.";
-
-            if (idstate && idstate.get()) {
-                item.set(idstate.get());
-            }
 
             postBuild(false);
         } catch (e) {
@@ -572,6 +575,7 @@ module.exports = function(minified) {
 
     var setVisible = function(item, visible) {
         if (!item) return;
+        if (item.tangentSpare && stickyPreview) visible = false;   // the pinned preview stands in for it
         if (visible) { item.show(); } else { item.hide(); }
     };
 
@@ -580,7 +584,7 @@ module.exports = function(minified) {
     // hides those itself.
     var WEATHER_IDS = ["WEATHER_HEADING", "WATCH_PREVIEW_4", "WEATHER_SAVE"];
     var WEATHER_KEYS = ["WeatherProv", "LocationQuery", "APIKEY_User", "UpSlider", "RefreshWeatherOnLaunch", "WeatherUnit",
-                          "ShowCurrent", "ShowForecast", "ShowAlert", "ShakeToRefreshWeather", "ShakeToParkHands"];
+                          "ShowCurrent", "ShowForecast", "ShowAlert", "ShakeToRefreshWeather"];
 
     var updateWeatherSectionVisibility = function() {
         var useWeather = config.getItemByMessageKey("UseWeather");
@@ -600,14 +604,13 @@ module.exports = function(minified) {
 
     // "Hands aside for (seconds)" only matters while weather and "Shake to Move Hands Aside" are both on
     var updateParkHandsVisibility = function() {
-        var useWeather = config.getItemByMessageKey("UseWeather");
         var park = config.getItemByMessageKey("ShakeToParkHands");
-        setVisible(config.getItemByMessageKey("ParkHandsSeconds"),
-                   !!(useWeather && useWeather.get() && park && park.get()));
+        setVisible(config.getItemByMessageKey("ParkHandsSeconds"), !!(park && park.get()));
     };
 
-    // The date format and language options only matter while the date is shown
-    var DATE_OPTION_KEYS = ["DateFormat", "DateLanguage"];
+    // The date format only matters while the date is shown. (The date language always shows: the
+    // complications' dates, week numbers and step separators follow it too.)
+    var DATE_OPTION_KEYS = ["DateFormat"];
 
     var updateDateOptionsVisibility = function() {
         var enableDate = config.getItemByMessageKey("EnableDate");
@@ -630,14 +633,14 @@ module.exports = function(minified) {
     // The "Custom Colours" group (heading, preview and every colour picker) only shows when the
     // custom theme is picked. Colour watches use ThemeSelect and B&W watches BWThemeSelect; a
     // watch only ever has one of the two.
-    var CUSTOM_COLOUR_IDS = ["CUSTOM_COLOURS_HEADING", "WATCH_PREVIEW_6"];
+    var CUSTOM_COLOUR_IDS = ["CUSTOM_COLOURS_HEADING", "WATCH_PREVIEW_6", "LOAD_PRESET", "BW_LOAD_PRESET"];
     var CUSTOM_COLOUR_KEYS = [
         "BackgroundColor1", "MinuteHandShadowColor", "MajorTickColor", "MinorTickColor",
         "HourDigitsColor", "MinutesHandColor", "HourHandColor", "SecondsHandColor", "MonthHandColor",
-        "SubDialColor", "DateColor", "BatteryWeatherColor", "BatteryLineColor", "BTQTColor",
+        "SubDialColor", "DateColor", "BatteryWeatherColor", "BottomColor", "BatteryLineColor", "BTQTColor",
         "BWBackgroundColor1", "BWMinuteHandShadowColor", "BWMajorTickColor", "BWMinHandBatLineColor", "BWHourHandColor",
         "BWSecondsHandColor", "BWMonthHandColor", "BWSubDialColor", "BWHourDigitsColor",
-        "BWDateColor", "BWBatteryWeatherColor", "BWBTQTColor"
+        "BWDateColor", "BWBatteryWeatherColor", "BWBottomColor", "BWBTQTColor"
     ];
     var THEME_SELECT_KEYS = ["ThemeSelect", "BWThemeSelect"];
 
@@ -663,14 +666,36 @@ module.exports = function(minified) {
     // item ids, `keys` are message keys.
     var SUBDIAL_RULES = [
         // Second timezone
-        { when: [TZ_SUBDIAL_VALUE], ids: ["TZ_HEADING", "TZ_BUTTON", "TZ_DEBUG"], keys: ["showremoteAMPM", "TZ_ID"] },
+        // Second timezone on the sub-dial (the timezone settings also show for a timezone text row: below)
+        { when: [TZ_SUBDIAL_VALUE], keys: ["showremoteAMPM"] },
         // Seconds, with timeout
         { when: [2],       keys: ["AlwaysShowSubDial"] },
         // Seconds with timeout, and month hand + seconds on shake
         { when: [2, 6],    keys: ["SecondsVisibleTime"] },
         // Seconds always on, or with timeout (or on shake): the sweep option is relevant
-        { when: [1, 2, 6], ids: ["SECONDS_HEADING"], keys: ["SmoothSweep"] }
+        { when: [1, 2, 6], ids: ["SECONDS_HEADING"], keys: ["SmoothSweep"] },
+        // Steps vs your target
+        { when: [7],       keys: ["StepTarget"] },
+        // Sub-dial off: the text rows take its place
+        { when: [0],       ids: ["TEXT_ROWS_HEADING"], keys: ["TextRow1", "TextRow2"] }
     ];
+
+    // The four complication slots, and each one's own settings. The text rows only show while the
+    // sub-dial is off; the second top row has no time zone (too short).
+    var SLOTS = [
+        { key: "TopSlot1", date: "TopDate1", text: "SlotText1", tz: "SlotTZ1", label: "SlotLabel1" },
+        { key: "TopSlot2", date: "TopDate2", text: "SlotText2" },
+        { key: "TextRow1", date: "TextRowDate1", text: "SlotText3", tz: "SlotTZ3", label: "SlotLabel3", row: true },
+        { key: "TextRow2", date: "TextRowDate2", text: "SlotText4", tz: "SlotTZ4", label: "SlotLabel4", row: true }
+    ];
+    // What a slot shows ("0" for nothing, including a text row while the sub-dial is on)
+    var slotKind = function(slot) {
+        var subdial = config.getItemByMessageKey("SubDialChoice");
+        if (slot.row && subdial && parseInt(subdial.get(), 10) !== 0) return "0";
+        var item = config.getItemByMessageKey(slot.key);
+        return item ? String(item.get()) : "0";
+    };
+    var isTimezoneKind = function(kind) { return kind === "9" || kind === "10"; };
 
     var updateSubdialSectionVisibility = function() {
         var subdial = config.getItemByMessageKey("SubDialChoice");
@@ -690,6 +715,28 @@ module.exports = function(minified) {
         var sweep = config.getItemByMessageKey("SmoothSweep");
         setVisible(config.getItemByMessageKey("SweepRate"),
                    [1, 2, 6].indexOf(choice) !== -1 && !!(sweep && sweep.get()));
+        // Each slot's own options, only while it shows that
+        var kinds = SLOTS.map(slotKind);
+        var anyShows = function(list) { return kinds.some(function(k) { return list.indexOf(k) !== -1; }); };
+        SLOTS.forEach(function(slot, n) {
+            setVisible(config.getItemByMessageKey(slot.date), kinds[n] === "12");
+            setVisible(config.getItemByMessageKey(slot.text), kinds[n] === "11");
+            if (slot.tz) {
+                setVisible(config.getItemByMessageKey(slot.tz), isTimezoneKind(kinds[n]));
+                setVisible(config.getItemByMessageKey(slot.label), isTimezoneKind(kinds[n]));
+            }
+        });
+        // AM/PM applies to every clock time: the time, sunrise/sunset and the timezones
+        ["ShowAMPM", "LeadingZero12", "LeadingZero24"].forEach(function(key) {
+            setVisible(config.getItemByMessageKey(key), anyShows(["1", "4", "5", "6", "9", "10"]));
+        });
+        setVisible(config.getItemByMessageKey("StepSeparator"), anyShows(["2"]));
+        setVisible(config.getItemByMessageKey("PrecipInches"), anyShows(["8"]));
+        // The timezone list (heading, button, status) for the sub-dial's 2nd timezone or any slot's
+        var tzSubdial = choice === TZ_SUBDIAL_VALUE;
+        var tzAny = tzSubdial || kinds.some(isTimezoneKind);
+        ["TZ_HEADING", "TZ_BUTTON", "TZ_DEBUG"].forEach(function(id) { setVisible(config.getItemById(id), tzAny); });
+        setVisible(config.getItemByMessageKey("TZ_ID"), tzSubdial);
     };
 
     var maybeAutoFetchTimezones = function() {
@@ -697,11 +744,102 @@ module.exports = function(minified) {
     if (!subdial) return;
 
     var currentValue = parseInt(subdial.get(), 10);
-    if (currentValue !== TZ_SUBDIAL_VALUE) return;
+    var rowTimezone = SLOTS.some(function(slot) { return isTimezoneKind(slotKind(slot)); });
+    if (currentValue !== TZ_SUBDIAL_VALUE && !rowTimezone) return;
 
     if (timezonesJSON !== 0 && timezonesJSON !== null) return; // already have a good list
 
     getTimezones();
+    };
+
+    // ---- "Load colours from a preset": copies a preset's colours into the custom pickers ----
+    // The custom picker each preset colour goes in, as apply_colour_theme() / apply_bw_theme() in
+    // nomos.c fill them (theme fields as in PREVIEW_THEMES, below)
+    var PRESET_TO_CUSTOM = {
+        BackgroundColor1: "bg", SubDialColor: "bg", MinuteHandShadowColor: "shadow", MinorTickColor: "minor",
+        MajorTickColor: "text", HourDigitsColor: "text", DateColor: "text", BatteryWeatherColor: "text", BottomColor: "text",
+        MinutesHandColor: "hands", HourHandColor: "hands", SecondsHandColor: "accent", MonthHandColor: "accent",
+        BatteryLineColor: "battery", BTQTColor: "btqt"
+    };
+    var BW_CUSTOM_KEYS = ["BWBackgroundColor1", "BWSubDialColor", "BWMinuteHandShadowColor", "BWMajorTickColor",
+                          "BWMinHandBatLineColor", "BWHourHandColor", "BWSecondsHandColor", "BWMonthHandColor",
+                          "BWHourDigitsColor", "BWDateColor", "BWBatteryWeatherColor", "BWBottomColor", "BWBTQTColor"];
+    var PRESET_LOADERS = [
+        { id: "LOAD_PRESET", set: "colour", keys: Object.keys(PRESET_TO_CUSTOM),
+          colours: function(theme) {
+              var t = PREVIEW_THEMES[theme];
+              if (!t) return null;
+              var out = {};
+              Object.keys(PRESET_TO_CUSTOM).forEach(function(k) { out[k] = t[PRESET_TO_CUSTOM[k]]; });
+              return out;
+          } },
+        { id: "BW_LOAD_PRESET", set: "bw", keys: BW_CUSTOM_KEYS,
+          colours: function(theme) {
+              if (theme !== "wh" && theme !== "bl") return null;
+              var bg = theme === "wh" ? "#FFFFFF" : "#000000", fg = theme === "wh" ? "#000000" : "#FFFFFF";
+              var out = {};
+              BW_CUSTOM_KEYS.forEach(function(k) { out[k] = fg; });
+              out.BWBackgroundColor1 = out.BWSubDialColor = bg;
+              out.BWMinuteHandShadowColor = "#555555";   // dark grey, as with shadows on
+              return out;
+          } }
+    ];
+
+    // "My previous custom colours": the custom colours as you last set them yourself, kept (in the
+    // hidden, phone-only CustomColourMemory setting, which index.js keeps per watch) so loading a
+    // preset can be undone. Colours set by loading a preset don't count; changing any of them
+    // yourself afterwards does.
+    var loadingPreset = false;
+    var readColourMemory = function() {
+        var item = config.getItemByMessageKey("CustomColourMemory");
+        try { return JSON.parse((item && item.get()) || "{}") || {}; } catch (err) { return {}; }
+    };
+    var rememberCustomColours = function(loader) {
+        if (loadingPreset) return;
+        var item = config.getItemByMessageKey("CustomColourMemory");
+        if (!item) return;
+        var memory = readColourMemory(), mine = {};
+        loader.keys.forEach(function(k) {
+            var it = config.getItemByMessageKey(k);
+            if (it) mine[k] = it.get();
+        });
+        memory[loader.set] = mine;
+        item.set(JSON.stringify(memory));
+    };
+    var loadPreset = function(loader) {
+        var pick = config.getItemById(loader.id);
+        var choice = pick && pick.get();
+        if (!choice) return;
+        var values = choice === "mine" ? readColourMemory()[loader.set] : loader.colours(choice);
+        if (values) {
+            loadingPreset = true;
+            try {
+                Object.keys(values).forEach(function(k) {
+                    var it = config.getItemByMessageKey(k);
+                    var v = values[k];
+                    if (!it || v === undefined || v === null) return;
+                    it.set(typeof v === 'number' ? v : parseInt(String(v).replace(/^#|^0x/i, ''), 16));
+                });
+            } finally {
+                loadingPreset = false;
+            }
+        }
+        pick.set("");   // back to "Choose a preset...", ready for another
+    };
+    var initPresetLoaders = function() {
+        var memoryItem = config.getItemByMessageKey("CustomColourMemory");
+        if (memoryItem) memoryItem.hide();
+        PRESET_LOADERS.forEach(function(loader) {
+            var pick = config.getItemById(loader.id);
+            if (!pick) return;   // (only one of the two is on any watch's page)
+            // the colours saved last time are yours, unless you've already got some remembered
+            if (!readColourMemory()[loader.set]) rememberCustomColours(loader);
+            pick.on('change', function() { loadPreset(loader); });
+            loader.keys.forEach(function(k) {
+                var it = config.getItemByMessageKey(k);
+                if (it) it.on('change', function() { rememberCustomColours(loader); });
+            });
+        });
     };
 
     // =================================================================
@@ -749,8 +887,8 @@ module.exports = function(minified) {
     // ---- Fonts: subsets of Tangent-Regular.ttf and WeatherIcons-RegularMod.ttf, plus the
     // two dripicons glyphs used for the Bluetooth / Quiet Time icons ----
     var TANGENT_WOFF2_B64 = "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";
-    var WEATHER_ICONS_WOFF2_B64 = "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";
-    var DRIPICONS_ICONS_WOFF2_B64 = "d09GMgABAAAAAAH4AAwAAAAAA3AAAAGsAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGhYGVgA8EQgKgjyCJQE2AiQDCAsIAAQgBQYHIBt8AgCOwziGvERM5UNTYjMien6szb5/oohVSyRChkTFs5Zk0jx3SPUy/v+vtft30VlMtImnFWUWMa/mcSRiUkmeoHFIdNVI22e246FNeGAz+4nudjfwLNYAoyBNu1umuQ1Rf4uwdUwwAUSUiBTyg65BNKwd7OdbM4HeoHSHAMgCAA7ay1uxi5v7JnZP90grhiCAQsOKJmA6ttFzUb9BBExaWN+IiuSfUKCBHnq4BvcAVgBN22pKv1HIlVX24yUfAc6kGCGwwiL4iiv+Vjz5iirOylN+1UYDclgj+Vi4ZQGeRJWqYj+QmXKqkpc4jh23TaKPwC378RYHaQZeRfZ8K6yyr+hjiaDLZhuNjB9e/bkf6bS/br/37a1tbUQVXm063ZH7baYdx4+O814V/b5/v28Tv7h7uzzu7st1vna+AHLbVZ5TGp89dj2SHzXadi7hJ8F5Xq2NvSMSe87thcVi844OIlFRif+R2930Ftnor7gE58At5J3ZeFrLJ3sHQ3i/2ftvcM+bOakUgF+ftVVvVDYUTMHAQIFQIcJO4YLQ88MUcItFQYuXKQionkYK";
+    var WEATHER_ICONS_WOFF2_B64 = "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";
+    var DRIPICONS_ICONS_WOFF2_B64 = "d09GMgABAAAAAAKwAAwAAAAABLQAAAJjAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGhYGVgBEEQgKgyiCZwE2AiQDCgsKAAQgBYFQByAbkgMAHoVN2Swe80UxMw8wD9G7CL0Iojly9pLnEqAjZAfMqqoVpr6aUAM7IpW/1n7vuyYxheS+x0AysekrHfFGokMj0n+kQWgc4uDADiYXCEQDC6xN3jLd6xMe8vOBjXazaRpIpoF9QLMeDsNXPJIsPTW9PIJVh80EqgGSEDIhkjgHJcpjQqwCRsdf/NbYGUlJBYCoBQBMWVU/BlV8b5bGm2L1SCEQgIQM9YgE6hHrBZQrl9DOzpulBXtQ8aqYltcCAFGQQA7KUYljuAnIAZlc1ibLqtXK8waVzZZzzIqoGTPrig837u/DFnKyIQdH9UkVytlxg8HuLhBMXX6EKytP0Nivqjo5lPY9Zn6ObP+LdT/NSFVZikrzr5j7vgBm32U384ZlY5WBWVRZGQfjMDHjCFbUxwzVDPIDPtTv55iF1OtzFSPL/nXL8+e37nbHxN8aX95MrBgf582ss7Kj4033sndeOWvTBjLOXLB8/fJz+EX7ObLrsq5lx2W1a3WtvW721XBV56vOsdq87JcpcLfDrUV3Fyl//nif2ZiveFhxB6Z/TkXKbOqHWrdqRfe2tU8oO53rpDjSOtH/unC5tGLV4KHOXMhKL/OGDEt/RcrqV/Pvhg4DgECw6NXjisW6Ab/LKxJ4Ue/GKfjcvfSd2iD+pxzlEghSFPRI1CaL/wLsGwl2WmQgQG4AMUgIgSEAUGoSkcgrhEagp0muEc1MYWvmc7REA3PrSjUCVlgxbcm0UYsWrIrbkHl9g+rX+JutmDTOJSMhxaWSa19M1DNS4rLi3XhaATJuxarpDePS2ySkiBReAA==";
 
     var PREVIEW_FONT_TEXT = "TangentPreview";
     var PREVIEW_FONT_WEATHER = "TangentWeatherPreview";
@@ -762,6 +900,7 @@ module.exports = function(minified) {
     var PREVIEW_FONT_ASCENT = 1076 / 1024;
     var PREVIEW_FONT_DESCENT = 153 / 1024;
     var PREVIEW_WEATHER_ASCENT = 2245 / 2048;
+    var PREVIEW_DRIPICONS_ASCENT = 513 / 512;   // dripicons-v2's ascent
 
     // fctx sizes text by its em height, and its "top" anchor is the top of that em box: the
     // baseline sits (1 - descent) ems below y - about 0.85 em for Tangent - not a whole hhea
@@ -913,7 +1052,7 @@ module.exports = function(minified) {
                 var bwBg = bwTheme === "wh" ? "#FFFFFF" : "#000000";
                 c = {
                     bg: bwBg, subdial: bwBg, shadow: shadowOn ? "#555555" : bwBg,
-                    minorTick: fg, majorTick: fg, hourDigits: fg, date: fg, info: fg,
+                    minorTick: fg, majorTick: fg, hourDigits: fg, date: fg, info: fg, bottom: fg,
                     hands: fg, hourHand: fg, seconds: fg, month: fg, batteryLine: fg, btqt: fg
                 };
             } else {
@@ -928,6 +1067,7 @@ module.exports = function(minified) {
                     hourDigits: getColourVal("BWHourDigitsColor", "#000000"),
                     date: getColourVal("BWDateColor", "#000000"),
                     info: getColourVal("BWBatteryWeatherColor", "#000000"),
+                    bottom: getColourVal("BWBottomColor", getColourVal("BWBatteryWeatherColor", "#000000")),
                     hands: handsColour,
                     hourHand: getColourVal("BWHourHandColor", handsColour),
                     seconds: getColourVal("BWSecondsHandColor", "#000000"),
@@ -943,7 +1083,7 @@ module.exports = function(minified) {
             if (theme) {
                 c = {
                     bg: theme.bg, subdial: theme.bg, shadow: shadowOn ? theme.shadow : theme.bg,
-                    minorTick: theme.minor, majorTick: theme.text, hourDigits: theme.text, date: theme.text, info: theme.text,
+                    minorTick: theme.minor, majorTick: theme.text, hourDigits: theme.text, date: theme.text, info: theme.text, bottom: theme.text,
                     hands: theme.hands, hourHand: theme.hands, seconds: theme.accent, month: theme.accent,
                     batteryLine: theme.battery, btqt: theme.btqt
                 };
@@ -958,6 +1098,7 @@ module.exports = function(minified) {
                     hourDigits: getColourVal("HourDigitsColor", "#000000"),
                     date: getColourVal("DateColor", "#000000"),
                     info: getColourVal("BatteryWeatherColor", "#000000"),
+                    bottom: getColourVal("BottomColor", getColourVal("BatteryWeatherColor", "#000000")),
                     hands: getColourVal("MinutesHandColor", "#FF5500"),
                     hourHand: getColourVal("HourHandColor", getColourVal("MinutesHandColor", "#FF5500")),
                     seconds: getColourVal("SecondsHandColor", "#FF5500"),
@@ -1025,6 +1166,7 @@ module.exports = function(minified) {
     var PREVIEW_SAMPLE_WEEKDAY = 3;  // Wednesday (tm_wday)
     var PREVIEW_SAMPLE_MONTH = 8;    // September (tm_mon, so the month hand sits at 9)
     var PREVIEW_SAMPLE_DAY = 30;
+    var PREVIEW_SAMPLE_WEEK = 40;    // ISO week of Wednesday 30 September 2026
 
     // Like fetchwday()/fetchmonth(): exact locale match, otherwise English. "auto" on the
     // watch is the system locale (e.g. "fr_FR"); here it's the phone's language.
@@ -1035,7 +1177,11 @@ module.exports = function(minified) {
         }
         var weekdays = PREVIEW_WEEKDAYS[lang] || PREVIEW_WEEKDAYS.en;
         var months = PREVIEW_MONTHS[lang] || PREVIEW_MONTHS.en;
-        return { weekday: weekdays[PREVIEW_SAMPLE_WEEKDAY], month: months[PREVIEW_SAMPLE_MONTH], day: PREVIEW_SAMPLE_DAY };
+        // "week" before a week number, as nomos.c's prv_week_word()
+        var week = { es: "SEM", fr: "SEM", pt: "SEM", it: "SETT", de: "KW", sv: "V", da: "UGE", no: "UKE", nb: "UKE",
+                     fi: "VK", nl: "WK" }[String(lang).slice(0, 2).toLowerCase()] || "WK";
+        return { weekday: weekdays[PREVIEW_SAMPLE_WEEKDAY], month: months[PREVIEW_SAMPLE_MONTH], day: PREVIEW_SAMPLE_DAY,
+                 week: week };
     };
 
     var previewDateText = function(format, parts) {
@@ -1044,6 +1190,9 @@ module.exports = function(minified) {
             case "2": return parts.day + " " + parts.month;
             case "3": return String(parts.day);
             case "4": return (parts.day < 10 ? "0" : "") + parts.day;
+            case "5": return parts.week + " " + PREVIEW_SAMPLE_WEEK;
+            case "6": return parts.weekday;
+            case "7": return parts.month;
             default:  return parts.weekday + " " + parts.day;
         }
     };
@@ -1090,6 +1239,11 @@ module.exports = function(minified) {
 
     // Angles throughout are degrees, 0 = 3 o'clock, increasing clockwise (so -90 = 12 o'clock).
     // polar_to_point_offset()
+    // A sample day for the steps sub-dial and steps row: 6,432 steps so far, against an average
+    // day of 9,000 of which you'd usually have walked 5,500 by now
+    var PREVIEW_STEPS = { today: 6432, avgDay: 9000, avgNow: 5500 };
+    var PREVIEW_FONT_CAP = 0.8;   // Tangent's capitals, of the em (cap-height in the ffonts)
+
     var polarPoint = function(origin, deg, distance) {
         var trig = degToTrig(deg);
         return {
@@ -1172,17 +1326,29 @@ module.exports = function(minified) {
             enableDate: getBoolVal("EnableDate", true),
             dateFormat: getVal("DateFormat", "0"),
             dateLanguage: getVal("DateLanguage", "auto"),
-            enableBattery: getBoolVal("EnableBattery", true),
             enableBatteryLine: getBoolVal("EnableBatteryLine", true),
             showBtqtIcons: getBoolVal("ShowBTQTIcons", true),
             showMajorTick: getBoolVal("showMajorTick", true),
             showMinorTick: getBoolVal("showMinorTick", true),
             subdial: getIntVal("SubDialChoice", 0),
+            stepTarget: getIntVal("StepTarget", 10000),
+            // The four complication slots: the two at the top, then the two text rows
+            // (aplite keeps the original fixed top layout and has no text rows: nomos.c's SHOW_TOP_*)
+            slots: screen.aplite
+                ? [(getBoolVal("UseWeather", false) && getBoolVal("ShowCurrent", true)) ? 13 : getBoolVal("EnableBattery", true) ? 3 : 0,
+                   getBoolVal("ShowForecast", true) ? 14 : 0, 0, 0]
+                : [getIntVal("TopSlot1", 3), getIntVal("TopSlot2", 14), getIntVal("TextRow1", 0), getIntVal("TextRow2", 0)],
+            slotDates: [getVal("TopDate1", "0"), getVal("TopDate2", "0"), getVal("TextRowDate1", "0"), getVal("TextRowDate2", "0")],
+            slotTexts: [1, 2, 3, 4].map(function(i) { return String(getVal("SlotText" + i, "TANGENT") || ""); }),
+            slotLabels: [1, 2, 3, 4].map(function(i) { return String(getVal("SlotLabel" + i, "") || ""); }),
+            showAMPM: getBoolVal("ShowAMPM", false),
+            stepSeparator: getIntVal("StepSeparator", 0),
+            leadingZero12: getBoolVal("LeadingZero12", false),
+            leadingZero24: getBoolVal("LeadingZero24", true),
+            precipInches: getVal("PrecipInches", "0") === "1",
             showRemoteAMPM: getBoolVal("showremoteAMPM", true),
             useWeather: !!screen.weather && getBoolVal("UseWeather", false),
             fahrenheit: getBoolVal("WeatherUnit", false),
-            showCurrent: getBoolVal("ShowCurrent", true),
-            showForecast: getBoolVal("ShowForecast", true),
             showAlert: getBoolVal("ShowAlert", true),
             minuteThickness: getIntVal("MinuteHandThickness", 2),
             hourThickness: getIntVal("HourHandThickness", 2),
@@ -1517,6 +1683,7 @@ module.exports = function(minified) {
             var dy = 0;
             if (anchor === "top") dy = PREVIEW_FONT_TOP_ASCENT * em;
             else if (anchor === "middle") dy = (PREVIEW_FONT_ASCENT - PREVIEW_FONT_DESCENT) / 2 * em;
+            else if (anchor === "capmiddle") dy = PREVIEW_FONT_CAP / 2 * em;   // FTextAnchorCapMiddle
             ctx.fillText(text, 0, dy);
             ctx.restore();
         };
@@ -1656,7 +1823,7 @@ module.exports = function(minified) {
             var back = bw ? hs : hsHalf;
             disc(shift(subOrigin, -back, -back), g.seconds_circle_radius, c.shadow);
             disc(subOrigin, g.seconds_circle_radius - 1, c.subdial);
-            var tickCount = m.subdial === 4 ? 10 : 12;   // battery meter: one tick every 10%
+            var tickCount = (m.subdial === 4 || m.subdial === 7 || m.subdial === 8) ? 10 : 12;   // battery / steps meter: one tick every 10%
             for (var t = 0; t < tickCount; t++) {
                 var a = idiv(t * 360, tickCount) - 90;
                 line(polarPoint(subOrigin, a, g.second_hand_a - g.majorticklength),
@@ -1707,6 +1874,25 @@ module.exports = function(minified) {
             drawSubdialBackground();
             drawSubdialHand(idiv(80 * 360, 100) - 90, g.second_hand_a, c.month);
             drawSubdialCentre(c.month);
+        } else if (m.subdial === 7 || m.subdial === 8) {
+            // Steps meter (prv_draw_steps_subdial): 12 o'clock = the target (7) or your average day
+            // (8, with a marker for your usual steps by now); stops at 12. Sample day as below.
+            drawSubdialBackground();
+            var full = m.subdial === 7 ? m.stepTarget : PREVIEW_STEPS.avgDay;
+            if (m.subdial === 8) {
+                var markerAngle = idiv(Math.min(PREVIEW_STEPS.avgNow, full) * 360, full) - 90;
+                var tip = g.second_hand_a - g.majorticklength - 1, rim = g.second_hand_a + 1;
+                var pts = [polarPoint(subOrigin, markerAngle, tip),
+                           polarPoint(subOrigin, markerAngle - 12, rim),
+                           polarPoint(subOrigin, markerAngle + 12, rim)];
+                ctx.fillStyle = c.majorTick;   // stands out from the hand in every theme
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[1].x, pts[1].y); ctx.lineTo(pts[2].x, pts[2].y);
+                ctx.closePath();
+                ctx.fill();
+            }
+            drawSubdialHand(idiv(Math.min(PREVIEW_STEPS.today, full) * 360, full) - 90, g.second_hand_a, c.seconds);
+            drawSubdialCentre(c.seconds);
         } else if (m.subdial === 5) {
             // Second timezone: short hour hand (+ PM dot), full-length minute hand
             var hourAngle = idiv((sample.remoteHour12 * 60 + sample.remoteMinute) * 30, 60) - 90;
@@ -1779,9 +1965,144 @@ module.exports = function(minified) {
             }
         }
 
-        // Weather's current-icon-and-temperature replaces the battery value (nomos.c draws the
-        // battery value whenever weather is off, or weather is on but "Show Current" is off)
-        if (m.enableBattery && !(m.useWeather && m.showCurrent)) {
+        // ---- Complication slots (nomos.c: prv_text_row_text) ----
+        // Sample values: 10:08 (the hands' time), 6,432 steps, 80% battery, sunrise 06:52 and
+        // sunset 19:01 (so the next one is the sunset), UV 3 now and 6 at most today, a 40%
+        // chance of 1.2mm, and each slot's time zone a different number of hours away.
+        var pad2 = function(n) { return (n < 10 ? "0" : "") + n; };
+        // (the preview can't know the phone's 12/24-hour setting: 12-hour while AM/PM is on)
+        var clock = function(hh, mm) {
+            if (m.showAMPM) {
+                var h12 = hh % 12 || 12;
+                return (m.leadingZero12 ? pad2(h12) : h12) + ":" + pad2(mm) + (hh < 12 ? " AM" : " PM");
+            }
+            return (m.leadingZero24 ? pad2(hh) : hh) + ":" + pad2(mm);
+        };
+        var upper = function(t, n) { return t.toUpperCase().slice(0, n); };
+        var SAMPLE_ZONE_HOURS = [15, 1, 15, 1];
+        // [text, icon glyph or null] for a slot (0, 1 top; 2, 3 the text rows), or null if empty
+        var slotText = function(kind, slot) {
+            switch (kind) {
+                case 1: return [clock(10, 8), null];
+                case 3: return ["80", null];   // no "%", as the battery value always was
+                case 15: return ["64", "$"];   // the phone's battery, after a phone icon
+                case 16: case 17: case 18: case 19: case 20:
+                    return ["APP " + (kind - 15), null];   // a Pebble app complication: only the phone knows it
+                case 11: var ct = upper(m.slotTexts[slot], slot === 1 ? 5 : 11); return ct ? [ct, null] : null;
+                case 12: return [previewDateText(m.slotDates[slot], previewDateParts(m.dateLanguage)), null];
+            }
+            if (m.aplite && kind !== 13 && kind !== 14) return null;
+            if (kind === 2) {
+                var sep = [null, ",", ".", ""][m.stepSeparator];
+                if (sep === null || sep === undefined) {
+                    var lang = m.dateLanguage === "auto" ? ((navigator && navigator.language) || "en") : m.dateLanguage;
+                    sep = /^en/i.test(lang) ? "," : ".";
+                }
+                var t = PREVIEW_STEPS.today;
+                return [t >= 1000 ? Math.floor(t / 1000) + sep + ("00" + (t % 1000)).slice(-3) : String(t), null];
+            }
+            if (kind === 9 || kind === 10) {
+                var tag = upper(m.slotLabels[slot], 3);
+                return [(tag ? tag + " " : "") + clock(SAMPLE_ZONE_HOURS[slot], 8), null];
+            }
+            if (!m.useWeather) return null;   // the weather kinds are empty while weather is off
+            switch (kind) {
+                case 4: return [clock(6, 52), "\uF051"];
+                case 5:
+                case 6: return [clock(19, 1), "\uF052"];
+                case 7: return ["UV 3 | 6", null];
+                case 8: return ["40% | " + (m.precipInches ? "0.05IN" : "1.2MM"), null];
+                case 13: return [previewTemp(PREVIEW_WEATHER_C.temp, m.fahrenheit) + "\u00B0", "\uF00D"];
+                case 14: return [previewTemp(PREVIEW_WEATHER_C.high, m.fahrenheit) + " | " +
+                                 previewTemp(PREVIEW_WEATHER_C.low, m.fahrenheit) + "\u00B0", null];
+            }
+            return null;
+        };
+        // A slot's icon and text, centred together on x, the text's capitals middled on y
+        // Cuts `text` short (and any spaces left at its end) until measure(text) <= maxW (0: no limit)
+        var cutToWidth = function(text, maxW, measure) {
+            var chars = Array.from(text);
+            while (maxW > 0 && chars.length && measure(chars.join("")) > maxW) {
+                chars.pop();
+                while (chars.length && chars[chars.length - 1] === " ") chars.pop();
+            }
+            return chars.join("");
+        };
+        // The second top row's width (nomos.c's prv_top2_max_width): between the rain alert icon (its
+        // widest glyph, about 1.1 em) and the heat alert icon, either side of the centre
+        var top2MaxWidth = function() {
+            var centre = idiv(w, 2) + 1;
+            var leftRoom = centre - (g.RainIconRect[0] + idiv(g.weather_icon_size * 11, 10)) - 3;
+            var rightRoom = g.WarningIconRect[0] - centre - 3;
+            return 2 * Math.min(leftRoom, rightRoom);
+        };
+        var drawSlot = function(row, x, y, em, colour, maxW) {
+            var align = 'center';
+            ctx.save();
+            ctx.font = em + "px " + PREVIEW_TEXT_FAMILY;
+            var iconRoom = 0;
+            if (row[1]) {
+                var sunOrPhone = row[1] === "\uF051" || row[1] === "\uF052" || row[1] === "$";
+                var px0 = sunOrPhone ? (g.weather_icon_size >= 20 ? 16 : 12) : g.weather_icon_size;
+                var c2 = document.createElement('canvas').getContext('2d');
+                c2.font = px0 + "px '" + (row[1] === "$" ? PREVIEW_FONT_ICONS : PREVIEW_FONT_WEATHER) + "', sans-serif";
+                iconRoom = Math.ceil(c2.measureText(row[1]).width) + idiv(em, 6);
+            }
+            row = [cutToWidth(row[0], maxW ? maxW - iconRoom : 0, function(t) { return Math.round(ctx.measureText(t).width); }), row[1]];
+            ctx.restore();
+            if (row[1]) {
+                // the sunrise/sunset and phone icons: 16px on emery/gabbro, 12px on the smaller
+                // screens (FONT_SUNICONS_* / FONT_PHONEICON_*); the weather icon as at the top
+                var isSun = row[1] === "\uF051" || row[1] === "\uF052";
+                var isPhone = row[1] === "$";
+                var big = g.weather_icon_size >= 20;
+                var iconPx = (isSun || isPhone) ? (big ? 16 : 12) : g.weather_icon_size;
+                var iconFamily = isPhone ? PREVIEW_FONT_ICONS : PREVIEW_FONT_WEATHER;
+                // box top this % of its size above the capitals' middle (nomos.c's
+                // TEXT_ROW_ICON_TOP_PCT / PHONE_ICON_TOP_PCT), then the font's ascent down to the baseline
+                var iconTopPct = isPhone ? 54 : 69;
+                var iconAscent = isPhone ? PREVIEW_DRIPICONS_ASCENT : PREVIEW_WEATHER_ASCENT;
+                ctx.save();
+                ctx.font = iconPx + "px '" + iconFamily + "', sans-serif";
+                var iconW = Math.ceil(ctx.measureText(row[1]).width);
+                ctx.font = em + "px " + PREVIEW_TEXT_FAMILY;
+                var textW = Math.round(ctx.measureText(row[0]).width);
+                var gap = idiv(em, 6);
+                var left = x - idiv(iconW + gap + textW, 2);
+                ctx.fillStyle = colour;
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'alphabetic';
+                ctx.font = iconPx + "px '" + iconFamily + "', sans-serif";
+                ctx.fillText(row[1], left, y - idiv(iconPx * iconTopPct, 100) + iconAscent * iconPx);
+                ctx.restore();
+                x = left + iconW + gap;
+                align = 'left';
+            }
+            fctxText(row[0], x, y, em, colour, align, 'capmiddle', 0);
+        };
+        // the capitals' middle below fctx's "top" anchor: 45% of the em (nomos.c's TOP_SLOT_CAP_MIDDLE_PCT)
+        var capMiddleBelowTop = function(em) { return idiv(em * 45, 100); };
+
+        // The text rows (slots 2 and 3) in the sub-dial's place, while it's off
+        if (m.subdial === 0) {
+            var rowEm = idiv(g.font_size_date * 75, 100);
+            var halfStep = idiv(idiv(rowEm * 80, 100) * 145, 200);
+            for (var r = 0; r < 2; r++) {
+                var row = slotText(m.slots[2 + r], 2 + r);
+                if (!row) continue;
+                if (m.aplite) {
+                    boxText(row[0], idiv(w, 2), g.seconds_circle_centre_y + (r ? 9 : -9) - 10, 16, c.bottom);
+                    continue;
+                }
+                drawSlot(row, g.seconds_circle_centre_x, g.seconds_circle_centre_y + (r ? halfStep : -halfStep), rowEm, c.bottom);
+            }
+        }
+
+        // Top slot 1 (where the battery value was): battery and current weather are drawn as they
+        // always were; anything else is centred there at the battery value's size
+        var topY1 = g.BatteryYOffset + g.yOffsetFctx + (m.enableBatteryLine ? g.battery_pos_z : g.battery_pos_y);
+        var top1 = m.slots[0], top2 = m.slots[1];
+        if (top1 === 3) {
             if (m.aplite) {
                 boxText(String(batteryLevel), idiv(w, 2), g.BatteryYOffset + (m.enableBatteryLine ? 0 : 4), 16, c.info);
             } else {
@@ -1803,6 +2124,31 @@ module.exports = function(minified) {
         var RAIN_AMOUNT_GLYPHS = ["\uF0F6", "\uF0F7", "\uF0F8", "\uF0F9", "\uF0FA", "\uF0FB",
                                    "\uF0FC", "\uF0FD", "\uF0FE", "\uF0FF", "\uF100"];
 
+        if (top1 !== 3 && top1 !== 13) {
+            var topRow1 = slotText(top1, 0);
+            if (topRow1 && m.aplite) {
+                boxText(topRow1[0], idiv(w, 2), g.BatteryYOffset + (m.enableBatteryLine ? 0 : 4), 16, c.info);
+            } else if (topRow1) {
+                drawSlot(topRow1, cx, topY1 + capMiddleBelowTop(g.font_size_battery), g.font_size_battery, c.info);
+            }
+        }
+        // Top slot 2 (where the forecast was, between the alert icons): the forecast as it always
+        // was; anything else centred there at the forecast's size
+        if (top2 !== 14) {
+            var topRow2 = slotText(top2, 1);
+            if (topRow2 && m.aplite) {
+                ctx.save();
+                ctx.font = "16px " + PREVIEW_TEXT_FAMILY;
+                var cut2 = cutToWidth(topRow2[0], top2MaxWidth(), function(t) { return Math.round(ctx.measureText(t).width); });
+                ctx.restore();
+                boxText(cut2, cx + 1, g.BatteryYOffset + g.aplite_fore_dy, 16, c.info);
+            } else if (topRow2) {
+                var foreEm = g.font_size_battery + 2;
+                drawSlot(topRow2, cx + 1, g.BatteryYOffset + g.yOffsetFctx + g.battery_pos_z + g.forecast_offset + capMiddleBelowTop(foreEm),
+                         foreEm, c.info, top2MaxWidth());
+            }
+        }
+
         if (m.useWeather) {
             var weatherIcon = function(glyph, size, rect, align) {
                 ctx.save();
@@ -1815,7 +2161,7 @@ module.exports = function(minified) {
                 ctx.restore();
             };
 
-            if (m.showCurrent) {
+            if (top1 === 13) {
                 // Clear-sky glyph (weather icon 101), right-aligned in the icon rect
                 var iconRect = m.enableBatteryLine ? g.IconNowRect : g.IconNowRect2;
                 weatherIcon("\uF00D", g.weather_icon_size, iconRect, 'right');
@@ -1843,7 +2189,7 @@ module.exports = function(minified) {
                 }
             }
 
-            if (m.showForecast) {
+            if (top2 === 14) {
                 var foreText = previewTemp(PREVIEW_WEATHER_C.high, m.fahrenheit) + " | " +
                                previewTemp(PREVIEW_WEATHER_C.low, m.fahrenheit) + "\u00B0";
                 if (m.aplite) {
@@ -1921,23 +2267,62 @@ module.exports = function(minified) {
     };
 
     // -----------------------------------------------------------------
-    // Canvas placement. Several identical previews are inserted (near the top
-    // and at the start of the colour and hand-style sections) because
-    // position:sticky doesn't work in the Pebble config WebView. Each anchor
-    // is a "text" item with a matching "id" in config.js.
+    // Canvas placement. Each anchor is a "text" item with a matching "id" in config.js
+    // (WATCH_PREVIEW, WATCH_PREVIEW_2, ...). The first preview is pinned to the top of the
+    // page: it's moved out of its "text" item (whose small box would leave it no room to stay
+    // put) to sit directly in Clay's page-long <form>, with position: sticky. If the WebView
+    // takes that, the other previews are hidden; if not, they stay spread down the page.
     // -----------------------------------------------------------------
-    var previewInstances = []; // [{ id, canvas, ctx }, ...]
+    var previewInstances = []; // [{ id, canvas, ctx, pinned }, ...]
+    var previewBuiltIds = [];   // every anchor already turned into a canvas (kept or not)
+    var stickyPreview = false;
+    var PREVIEW_SMALL_PCT = 60;   // the pinned preview's size, folded (tap it to switch)
+    var previewSmall = true;
+    try { previewSmall = window.localStorage.getItem("tangentPreviewFull") !== "1"; } catch (e) { /* keep the default */ }
+
+    // Two diagonal arrows: pointing out to the corners (expand) or in to the middle (shrink)
+    var sizeIconSvg = function(d) {
+        return '<svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="#FFFFFF" stroke-width="2" ' +
+               'stroke-linecap="round" stroke-linejoin="round"><path d="' + d + '"/></svg>';
+    };
+    var SIZE_ICON_EXPAND = sizeIconSvg("M12 3h5v5M17 3l-6 6M8 17H3v-5M3 17l6-6");
+    var SIZE_ICON_SHRINK = sizeIconSvg("M16 9h-5V4M11 9l6-6M4 11h5v5M9 11l-6 6");
+
+    var previewCssWidth = function(inst, w) {
+        return inst.pinned && previewSmall ? Math.round(w * PREVIEW_SMALL_PCT / 100) : w;
+    };
+
+    // Moves the first preview's wrapper to the top of the form and pins it. True if it pinned.
+    var pinPreview = function(wrapper, item) {
+        var form = document.getElementById ? document.getElementById("main-form") : null;
+        if (!form || !wrapper.style || !window.getComputedStyle) return false;
+        var top = wrapper;   // the form's child holding the anchor (its section)
+        while (top && top.parentNode !== form) top = top.parentNode;
+        if (!top) return false;
+        wrapper.style.position = '-webkit-sticky';
+        wrapper.style.position = 'sticky';
+        wrapper.style.top = '0';
+        wrapper.style.zIndex = '50';   // under the colour picker (100)
+        wrapper.style.padding = '8px 0';
+        var bodyStyle = window.getComputedStyle(document.body);   // full width, over the body's padding
+        wrapper.style.marginLeft = '-' + bodyStyle.paddingLeft;
+        wrapper.style.marginRight = '-' + bodyStyle.paddingRight;
+        wrapper.style.background = bodyStyle.backgroundColor || '#333333';
+        wrapper.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.5)';
+        form.insertBefore(wrapper, top);
+        var pos = window.getComputedStyle(wrapper).position;
+        if (pos !== 'sticky' && pos !== '-webkit-sticky') return false;
+        if (item) item.hide();   // the anchor's now-empty box
+        return true;
+    };
 
     var ensurePreviewCanvases = function() {
         var anchorIds = getPreviewAnchorIds();
+        var spares = [];
         for (var i = 0; i < anchorIds.length; i++) {
             var id = anchorIds[i];
 
-            var alreadyBuilt = false;
-            for (var j = 0; j < previewInstances.length; j++) {
-                if (previewInstances[j].id === id) { alreadyBuilt = true; break; }
-            }
-            if (alreadyBuilt) continue;
+            if (previewBuiltIds.indexOf(id) >= 0) continue;
 
             // A "text" item's id is only a ClayItem property, never a real HTML id, so
             // document.getElementById can't find it. Go through the item's
@@ -1965,7 +2350,51 @@ module.exports = function(minified) {
             wrapper.appendChild(canvas);
             container.parentNode.replaceChild(wrapper, container);
 
-            previewInstances.push({ id: id, canvas: canvas, ctx: canvas.getContext('2d') });
+            previewBuiltIds.push(id);
+            var inst = { id: id, canvas: canvas, ctx: canvas.getContext('2d'), pinned: false };
+            if (previewBuiltIds.length === 1) {   // the first one
+                var pinned = false;
+                try { pinned = pinPreview(wrapper, anchor); } catch (e) { console.error("Couldn't pin the preview:", e); }
+                if (pinned) {
+                    stickyPreview = inst.pinned = true;
+                    var toggleSize = function() {   // tap: small <-> full size
+                        previewSmall = !previewSmall;
+                        try { window.localStorage.setItem("tangentPreviewFull", previewSmall ? "0" : "1"); } catch (e) { /* in memory only */ }
+                        drawPreview();
+                    };
+                    // The canvas and the size icon share a box, with the icon just off its bottom-right
+                    // corner: beside the face rather than over it (outside the circle on round watches)
+                    var holder = document.createElement('div');
+                    holder.style.position = 'relative';
+                    holder.style.display = 'inline-block';
+                    holder.style.lineHeight = '0';
+                    wrapper.replaceChild(holder, canvas);
+                    holder.appendChild(canvas);
+                    var icon = document.createElement('div');
+                    icon.style.position = 'absolute';
+                    icon.style.left = '100%';
+                    icon.style.bottom = '0';
+                    icon.style.marginLeft = '6px';
+                    icon.style.padding = '4px';   // a bigger target for a finger
+                    icon.style.opacity = '0.7';
+                    icon.style.cursor = 'pointer';
+                    icon.setAttribute('role', 'button');
+                    icon.setAttribute('aria-label', 'Change preview size');
+                    holder.appendChild(icon);
+                    inst.sizeIcon = icon;
+                    canvas.style.cursor = 'pointer';
+                    canvas.addEventListener('click', toggleSize);
+                    icon.addEventListener('click', toggleSize);
+                }
+            } else {
+                anchor.tangentSpare = true;
+                spares.push(anchor);
+            }
+            previewInstances.push(inst);
+        }
+        if (stickyPreview) {   // the pinned preview stands in for the rest
+            spares.forEach(function(a) { a.hide(); });
+            previewInstances = previewInstances.filter(function(p) { return p.pinned; });
         }
 
         return previewInstances.length > 0;
@@ -1996,7 +2425,8 @@ module.exports = function(minified) {
 
             canvas.width = model.w * scale;
             canvas.height = model.h * scale;
-            canvas.style.width = model.w + 'px'; // shown at the watch's own pixel size
+            canvas.style.width = previewCssWidth(previewInstances[k], model.w) + 'px'; // the watch's own pixel size (the pinned one folded smaller)
+            if (previewInstances[k].sizeIcon) previewInstances[k].sizeIcon.innerHTML = previewSmall ? SIZE_ICON_EXPAND : SIZE_ICON_SHRINK;
             canvas.style.borderRadius = model.round ? '50%' : '4px';
 
             ctx.save();
@@ -2011,15 +2441,15 @@ module.exports = function(minified) {
         "PreviewPlatformOverride",
         "ForegroundShape", "Roman", "EnableDate", "DateFormat", "DateLanguage",
         "EnableBattery", "EnableBatteryLine", "ShowBTQTIcons", "showMajorTick", "showMinorTick",
-        "SubDialChoice", "showremoteAMPM", "UseWeather", "WeatherUnit", "ShowCurrent", "ShowForecast", "ShowAlert", "HourTicksOnly",
+        "SubDialChoice", "StepTarget", "TextRow1", "TextRow2", "ShowAMPM", "LeadingZero12", "LeadingZero24", "StepSeparator", "TopSlot1", "TopSlot2", "TopDate1", "TopDate2", "SlotText1", "SlotText2", "SlotText3", "SlotText4", "SlotLabel1", "SlotLabel3", "SlotLabel4", "TextRowDate1", "TextRowDate2", "PrecipInches", "showremoteAMPM", "UseWeather", "WeatherUnit", "ShowCurrent", "ShowForecast", "ShowAlert", "HourTicksOnly",
         "MinuteHandThickness", "HourHandThickness", "MinuteCentreSize", "HourCentreSize",
         "InnerCentreSize", "BackSize", "BackLen",
         "ShadowOn", "BackgroundStyle", "ThemeSelect", "BackgroundColor1", "MinuteHandShadowColor", "MajorTickColor",
         "MinorTickColor", "HourDigitsColor", "MinutesHandColor", "HourHandColor", "SecondsHandColor", "MonthHandColor",
-        "SubDialColor", "DateColor", "BatteryWeatherColor", "BatteryLineColor", "BTQTColor",
+        "SubDialColor", "DateColor", "BatteryWeatherColor", "BottomColor", "BatteryLineColor", "BTQTColor",
         "BWShadowOn", "BWThemeSelect", "BWBackgroundColor1", "BWMinuteHandShadowColor", "BWMajorTickColor",
         "BWMinHandBatLineColor", "BWHourHandColor", "BWSecondsHandColor", "BWMonthHandColor", "BWSubDialColor",
-        "BWHourDigitsColor", "BWDateColor", "BWBatteryWeatherColor", "BWBTQTColor",
+        "BWHourDigitsColor", "BWDateColor", "BWBatteryWeatherColor", "BWBottomColor", "BWBTQTColor",
         "PicColor1", "PicColor2", "PicColor3", "PicColor4", "PicColor5", "PicColor6", "PicColor7"
     ];
 
@@ -2121,6 +2551,14 @@ module.exports = function(minified) {
                 item.on('change', drawPreview);
             }
         });
+        // Text fields only send 'change' when they lose focus: redraw as the user types too
+        ["SlotText1", "SlotText2", "SlotText3", "SlotText4", "SlotLabel1", "SlotLabel3", "SlotLabel4"].forEach(function(key) {
+            var item = config.getItemByMessageKey(key);
+            var input = item && item.$manipulatorTarget && item.$manipulatorTarget[0];
+            if (input && input.addEventListener) {
+                input.addEventListener('input', drawPreview);
+            }
+        });
 
         // Draw straight away with system-font stand-ins, then again once the real
         // digit / icon fonts have loaded (they're tiny, so this is near-instant).
@@ -2133,8 +2571,10 @@ module.exports = function(minified) {
 
         initLocationSearch();
 
-        var stateItem = config.getItemByMessageKey("TZ_ID_STATE");
-        if (stateItem) stateItem.hide();
+        TZ_PICKERS.forEach(function(picker) {
+            var stateItem = config.getItemByMessageKey(picker.state);
+            if (stateItem) stateItem.hide();
+        });
 
         var debug = config.getItemById("TZ_DEBUG");
         if (debug) {
@@ -2173,6 +2613,13 @@ module.exports = function(minified) {
         if (smoothSweep) {
             smoothSweep.on('change', updateSubdialSectionVisibility);
         }
+        SLOTS.forEach(function(slot) {
+            var row = config.getItemByMessageKey(slot.key);
+            if (row) {
+                row.on('change', updateSubdialSectionVisibility);
+                row.on('change', maybeAutoFetchTimezones);
+            }
+        });
         updateSubdialSectionVisibility();
         maybeAutoFetchTimezones();
 
@@ -2208,6 +2655,7 @@ module.exports = function(minified) {
             }
         });
         updateCustomColourVisibility();
+        initPresetLoaders();
 
         initPreview();
     });

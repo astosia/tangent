@@ -387,8 +387,8 @@ function fetchOpenMeteo(lat, lon, useFahrenheit) {
     var url = 'https://api.open-meteo.com/v1/forecast' +
         '?latitude=' + lat + '&longitude=' + lon +
         '&current=temperature_2m,relative_humidity_2m,weather_code,is_day,' +
-            'wind_speed_10m,shortwave_radiation,direct_radiation,diffuse_radiation,surface_pressure' +
-        '&daily=temperature_2m_max,temperature_2m_min' +
+            'wind_speed_10m,shortwave_radiation,direct_radiation,diffuse_radiation,surface_pressure,uv_index' +
+        '&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max' +
         '&hourly=precipitation_probability,precipitation' +
         '&forecast_days=2' +
         '&timezone=auto' +
@@ -427,11 +427,16 @@ function fetchOpenMeteo(lat, lon, useFahrenheit) {
             ? Math.floor((Date.now() / 1000 - firstHour) / 3600) + 1
             : new Date().getHours() + 1;
         var rainChance = (typeof probs[nextHourIdx] === 'number') ? probs[nextHourIdx] : 0;
+        // Open-Meteo's `precipitation` is everything falling (rain, showers and snow as water)
         var rainAmountMm = (typeof amounts[nextHourIdx] === 'number') ? amounts[nextHourIdx] : 0;
+        var daily = json.daily || {};
 
         return {
             icon: icon, temp: temp, high: high, low: low,
-            rainChance: rainChance, rainAmountMm: rainAmountMm, wbgtLevel: wbgtLevel
+            rainChance: rainChance, rainAmountMm: rainAmountMm, wbgtLevel: wbgtLevel,
+            precipMm: rainAmountMm,
+            sunrise: daily.sunrise && daily.sunrise[0], sunset: daily.sunset && daily.sunset[0],
+            uvNow: json.current.uv_index, uvMax: daily.uv_index_max && daily.uv_index_max[0]
         };
     });
 }
@@ -526,6 +531,8 @@ function owmResult(current, today, nextHour, lat, lon, useFahrenheit) {
     // `rain['1h']` is only present in the response when rain is actually forecast for that hour.
     var rainChance = nextHour ? Math.round((nextHour.pop || 0) * 100) : 0;
     var rainAmountMm = (nextHour && nextHour.rain && nextHour.rain['1h']) || 0;
+    // Precipitation (the text row): rain and snow together, both in mm of water
+    var snowMm = (nextHour && nextHour.snow && nextHour.snow['1h']) || 0;
 
     // WBGT needs Celsius/m-s regardless of the display unit, and 'units'
     // only affects temp/wind fields, not humidity - current.humidity
@@ -552,14 +559,32 @@ function owmResult(current, today, nextHour, lat, lon, useFahrenheit) {
 
     return {
         icon: icon, temp: temp, high: high, low: low,
-        rainChance: rainChance, rainAmountMm: rainAmountMm, wbgtLevel: wbgtLevel
+        rainChance: rainChance, rainAmountMm: rainAmountMm, wbgtLevel: wbgtLevel,
+        precipMm: rainAmountMm + snowMm,
+        sunrise: current.sunrise || (today && today.sunrise), sunset: current.sunset || (today && today.sunset),
+        uvNow: current.uvi, uvMax: today ? today.uvi : undefined
     };
+}
+
+// Unix seconds -> minutes after midnight on the phone's clock (the watch keeps the phone's time),
+// or -1 if unknown. Kept as a time of day so it doesn't go stale: the watch picks today's or
+// tomorrow's from it, a day's sunrise moving only a minute or two.
+function minutesOfDay(unixSeconds) {
+    if (typeof unixSeconds !== 'number' || !isFinite(unixSeconds) || unixSeconds <= 0) return -1;
+    var d = new Date(unixSeconds * 1000);
+    return d.getHours() * 60 + d.getMinutes();
+}
+
+function roundOr(value, fallback) {
+    return (typeof value === 'number' && isFinite(value)) ? Math.round(value) : fallback;
 }
 
 // ---- Public API ------------------------------------------------------
 
 // get(settings) -> Promise resolving to
-// { icon: <number>, temp: "<string>", tempFore: "<string>", rainSoon: <0|1>, rainAmount: <0-10>, wbgtLevel: <0-3> }.
+// { icon: <number>, temp: "<string>", tempFore: "<string>", rainSoon: <0|1>, rainAmount: <0-10>, wbgtLevel: <0-3>,
+//   sunrise, sunset: <minutes after midnight, or -1>, uvNow, uvMax: <rounded, or -1>,
+//   precipChance: <% next hour>, precipTenthMm: <next hour's rain+snow, tenths of a mm> }.
 // rainAmount indexes the watch's rain-amount icon set and is only meaningful while rainSoon is 1.
 //
 //   UseWeather   (bool)   - master on/off switch
@@ -574,7 +599,8 @@ var getWeather = function(settings) {
 
     if (!useWeather) {
         console.log("Weather disabled - icon=0 temp=-- tempFore=--|-- rainSoon=0 rainAmount=0 wbgtLevel=0");
-        return Promise.resolve({ icon: 0, temp: '--', tempFore: '--|--', rainSoon: 0, rainAmount: 0, wbgtLevel: 0 });
+        return Promise.resolve({ icon: 0, temp: '--', tempFore: '--|--', rainSoon: 0, rainAmount: 0, wbgtLevel: 0,
+                                 sunrise: -1, sunset: -1, uvNow: -1, uvMax: -1, precipChance: -1, precipTenthMm: -1 });
     }
 
     var useFahrenheit = !!settings.WeatherUnit;
@@ -608,7 +634,13 @@ var getWeather = function(settings) {
             tempFore: String(result.high) + ' | ' + String(result.low),
             rainSoon: rainSoon,
             rainAmount: rainAmount,
-            wbgtLevel: result.wbgtLevel
+            wbgtLevel: result.wbgtLevel,
+            sunrise: minutesOfDay(result.sunrise),
+            sunset: minutesOfDay(result.sunset),
+            uvNow: roundOr(result.uvNow, -1),
+            uvMax: roundOr(result.uvMax, -1),
+            precipChance: roundOr(result.rainChance, -1),
+            precipTenthMm: roundOr((result.precipMm || 0) * 10, -1)
         };
     });
 };

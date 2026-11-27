@@ -62,10 +62,30 @@ module.exports = [
       },
       {
         "type": "toggle",
-        "label": "Date visible",
+        "label": "Show Date (at bottom of dial)",
         "messageKey": "EnableDate",
        // "description": "Replaces the 6 at the bottom of the dial. Select format:",
         "defaultValue": false
+      },
+      {
+        "type": "select",
+        "messageKey": "DateLanguage",
+        "defaultValue": "auto",
+        "label": "Date Language",
+        "options": [
+          { "label": "Automatic (match watch)", "value": "auto" },
+          { "label": "English",  "value": "en_EN" },
+          { "label": "Español",  "value": "es_ES" },
+          { "label": "Français", "value": "fr_FR" },
+          { "label": "Deutsch",  "value": "de_DE" },
+          { "label": "Italiano", "value": "it_IT" },
+          { "label": "Português","value": "pt_PT" },
+          { "label": "Svenska",  "value": "sv_SE" },
+          { "label": "Dansk",    "value": "da_DK" },
+          { "label": "Norsk",    "value": "no_NO" },
+          { "label": "Suomi",   "value": "fi_FI" },
+          { "label": "Nederlands","value": "nl_NL" }
+        ]
       },
       {
         "type": "radiogroup",
@@ -91,27 +111,10 @@ module.exports = [
           {
              "label": "DD (09), two digit day", 
              "value": "4" 
-          }
-        ]
-      },
-      {
-        "type": "select",
-        "messageKey": "DateLanguage",
-        "defaultValue": "auto",
-        "label": "Date Language",
-        "options": [
-          { "label": "Automatic (match watch)", "value": "auto" },
-          { "label": "English",  "value": "en_EN" },
-          { "label": "Español",  "value": "es_ES" },
-          { "label": "Français", "value": "fr_FR" },
-          { "label": "Deutsch",  "value": "de_DE" },
-          { "label": "Italiano", "value": "it_IT" },
-          { "label": "Português","value": "pt_PT" },
-          { "label": "Svenska",  "value": "sv_SE" },
-          { "label": "Dansk",    "value": "da_DK" },
-          { "label": "Norsk",    "value": "no_NO" },
-          { "label": "Suomi",   "value": "fi_FI" },
-          { "label": "Nederlands","value": "nl_NL" }
+          },
+          { "label": "Week number (WK 48)", "value": "5" },
+          { "label": "DDD (WED), weekday only", "value": "6" },
+          { "label": "MMM (AUG), month only", "value": "7" }
         ]
       },
       {
@@ -121,6 +124,7 @@ module.exports = [
       },
       {
         "type": "toggle",
+        "capabilities": ["NOT_HEALTH"],
         "label": "Battery Value visible",
         "messageKey": "EnableBattery",
         "defaultValue": true
@@ -171,6 +175,7 @@ module.exports = [
           ]
         },
         {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
         "type": "toggle",
         "messageKey": "TimelinePins",
         "label": "Timeline pins for phone disconnections",
@@ -182,42 +187,387 @@ module.exports = [
         "id": "WATCH_PREVIEW_3",
         "defaultValue": ""
         },
+        // Two copies: watches with a step counter also get the steps options (7, 8); aplite hasn't one
         {
         "type": "select",
         "messageKey": "SubDialChoice",
+        "capabilities": ["HEALTH"],
         "defaultValue": 0,
         "label": "SUB DIAL OPTION",
-        "description": "Choose what to show on the sub-dial",
+        "description": "Choose what to show on the sub-dial. With it off, you can show two rows of text in its place (below)",
         "options": [
-            { 
-              "label": "Off, don't show sub-dial", 
-              "value": 0 
-            },
-            { 
-              "label": "Seconds, Always On",
-              "value": 1 
-            },
-            { 
-              "label": "Seconds, with Timeout",
-              "value": 2 
-            },
-            { 
-              "label": "Month (12=Dec, 6=Jun)",
-              "value": 3 
-            },
-            { 
-              "label": "Month always on + seconds with timeout",
-              "value": 6
-            },
-            { 
-              "label": "Battery level (12 o'clock = full, 9 = 75%, 6 = 50%, 3 = 25%)",
-              "value": 4 
-            },
-            { 
-              "label": "Second Timezone",
-              "value": 5
-            }
+            { "label": "Off, don't show sub-dial", "value": 0 },
+            { "label": "Seconds, Always On", "value": 1 },
+            { "label": "Seconds, with Timeout", "value": 2 },
+            { "label": "Month (12=Dec, 6=Jun)", "value": 3 },
+            { "label": "Month always on + seconds with timeout", "value": 6 },
+            { "label": "Battery level (12 o'clock = full, 9 = 75%, 6 = 50%, 3 = 25%)", "value": 4 },
+            { "label": "Second Timezone", "value": 5 },
+            { "label": "Steps vs your target (12 o'clock = target reached)", "value": 7 },
+            { "label": "Steps vs your average day (marker = your usual steps by now)", "value": 8 }
           ]
+      },
+        {
+        "type": "select",
+        "messageKey": "SubDialChoice",
+        "capabilities": ["NOT_HEALTH"],
+        "defaultValue": 0,
+        "label": "SUB DIAL OPTION",
+        "description": "Choose what to show on the sub-dial. With it off, you can show two rows of text in its place (below)",
+        "options": [
+            { "label": "Off, don't show sub-dial", "value": 0 },
+            { "label": "Seconds, Always On", "value": 1 },
+            { "label": "Seconds, with Timeout", "value": 2 },
+            { "label": "Month (12=Dec, 6=Jun)", "value": 3 },
+            { "label": "Month always on + seconds with timeout", "value": 6 },
+            { "label": "Battery level (12 o'clock = full, 9 = 75%, 6 = 50%, 3 = 25%)", "value": 4 },
+            { "label": "Second Timezone", "value": 5 }
+          ]
+      },
+      {
+        "type": "slider",
+        "messageKey": "StepTarget",
+        "capabilities": ["HEALTH"],
+        "label": "Daily step target",
+        "description": "The hand reaches 12 o'clock when you've walked this many steps today",
+        "defaultValue": 10000,
+        "min": 1000,
+        "max": 20000,
+        "step": 1000
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "heading",
+        "id": "TOP_SLOTS_HEADING",
+        "defaultValue": "Top complications",
+        "description": "Two slots at the top of the face. Pebble app complications 1-5 are the readings listed on the Pebble app's Plugins > Complications tab, in that order."
+      },
+      {
+        "type": "select",
+        "messageKey": "TopSlot1",
+        "capabilities": ["HEALTH"],
+        "label": "Top",
+        "defaultValue": "3",
+        "options": [
+          { "label": "None", "value": "0" },
+          { "label": "Date", "value": "12" },
+          { "label": "Time (digital)", "value": "1" },
+          { "label": "Sunrise", "value": "4" },
+          { "label": "Sunset", "value": "5" },
+          { "label": "Next sunrise or sunset", "value": "6" },
+          { "label": "Steps today", "value": "2" },
+          { "label": "Watch Battery", "value": "3" },
+          { "label": "Phone battery", "value": "15" },
+          { "label": "Current weather (icon & temperature)", "value": "13" },
+          { "label": "Forecast high | low", "value": "14" },
+          { "label": "UV index: now | today's max", "value": "7" },
+          { "label": "Precipitation: chance | amount next hour", "value": "8" },
+          { "label": "Timezone", "value": "9" },
+          { "label": "Custom text", "value": "11" },
+          { "label": "Pebble app complication 1", "value": "16" },
+          { "label": "Pebble app complication 2", "value": "17" },
+          { "label": "Pebble app complication 3", "value": "18" },
+          { "label": "Pebble app complication 4", "value": "19" },
+          { "label": "Pebble app complication 5", "value": "20" }
+        ]
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "select",
+        "messageKey": "TopDate1",
+        "label": "Top date format",
+        "defaultValue": "0",
+        "options": [
+          { "label": "WED 9", "value": "0" },
+          { "label": "AUG 9", "value": "1" },
+          { "label": "9 AUG", "value": "2" },
+          { "label": "9", "value": "3" },
+          { "label": "09", "value": "4" },
+          { "label": "Week number (WK 48)", "value": "5" },
+          { "label": "Weekday (WED)", "value": "6" },
+          { "label": "Month (AUG)", "value": "7" }
+        ]
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "input",
+        "messageKey": "SlotText1",
+        "label": "Top custom text",
+        "description": "Shown in capitals; about 8 letters fit on the smaller watches",
+        "defaultValue": "TANGENT",
+        "attributes": { "maxlength": 11 }
+      },
+      {
+        "type": "input",
+        "messageKey": "SlotTZ1",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "label": "Top timezone",
+        "description": "Start typing a city or region to search.",
+        "defaultValue": ""
+      },
+      {
+        "type": "input",
+        "messageKey": "SlotTZState1",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "defaultValue": ""
+      },
+      {
+        "type": "input",
+        "messageKey": "SlotLabel1",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "label": "Top timezone label",
+        "description": "Up to 3 letters shown before the time, e.g. NYC (blank: time only)",
+        "defaultValue": "",
+        "attributes": { "maxlength": 3 }
+      },
+      {
+        "type": "select",
+        "messageKey": "TopSlot2",
+        "capabilities": ["HEALTH"],
+        "label": "Top, second row",
+        "description": "Between the rain and heat alert icons, so only allows shorter items: long text will be cut off",
+        "defaultValue": "14",
+        "options": [
+          { "label": "None", "value": "0" },
+          { "label": "Steps today", "value": "2" },
+          { "label": "Watch Battery", "value": "3" },
+          { "label": "Phone battery", "value": "15" },
+          { "label": "Current weather (icon & temperature)", "value": "13" },
+          { "label": "Forecast high | low", "value": "14" },
+          { "label": "UV index: now | today's max", "value": "7" },
+          { "label": "Pebble app complication 1", "value": "16" },
+          { "label": "Pebble app complication 2", "value": "17" },
+          { "label": "Pebble app complication 3", "value": "18" },
+          { "label": "Pebble app complication 4", "value": "19" },
+          { "label": "Pebble app complication 5", "value": "20" }
+        ]
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "heading",
+        "id": "TEXT_ROWS_HEADING",
+        "defaultValue": "Bottom complications",
+        "description": "Two rows of text above the date, shown while the sub-dial is off. Pebble app complications 1-5 are the readings listed on the Pebble app's Plugins > Complications tab, in that order."
+      },
+      {
+        "type": "select",
+        "messageKey": "TextRow1",
+        "capabilities": ["HEALTH"],
+        "label": "Top row",
+        "defaultValue": "0",
+        "options": [
+          { "label": "None", "value": "0" },
+          { "label": "Date", "value": "12" },
+          { "label": "Time (digital)", "value": "1" },
+          { "label": "Sunrise", "value": "4" },
+          { "label": "Sunset", "value": "5" },
+          { "label": "Next sunrise or sunset", "value": "6" },
+          { "label": "Steps today", "value": "2" },
+          { "label": "Watch Battery", "value": "3" },
+          { "label": "Phone battery", "value": "15" },
+          { "label": "Current weather (icon & temperature)", "value": "13" },
+          { "label": "Forecast high | low", "value": "14" },
+          { "label": "UV index: now | today's max", "value": "7" },
+          { "label": "Precipitation: chance | amount next hour", "value": "8" },
+          { "label": "Timezone", "value": "9" },
+          { "label": "Custom text", "value": "11" },
+          { "label": "Pebble app complication 1", "value": "16" },
+          { "label": "Pebble app complication 2", "value": "17" },
+          { "label": "Pebble app complication 3", "value": "18" },
+          { "label": "Pebble app complication 4", "value": "19" },
+          { "label": "Pebble app complication 5", "value": "20" }
+        ]
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "select",
+        "messageKey": "TextRowDate1",
+        "label": "Top row date format",
+        "defaultValue": "0",
+        "options": [
+          { "label": "WED 9", "value": "0" },
+          { "label": "AUG 9", "value": "1" },
+          { "label": "9 AUG", "value": "2" },
+          { "label": "9", "value": "3" },
+          { "label": "09", "value": "4" },
+          { "label": "Week number (WK 48)", "value": "5" },
+          { "label": "Weekday (WED)", "value": "6" },
+          { "label": "Month (AUG)", "value": "7" }
+        ]
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "input",
+        "messageKey": "SlotText3",
+        "label": "Top row custom text",
+        "description": "Shown in capitals; about 8 letters fit on the smaller watches",
+        "defaultValue": "TANGENT",
+        "attributes": { "maxlength": 11 }
+      },
+      {
+        "type": "input",
+        "messageKey": "SlotTZ3",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "label": "Top row timezone",
+        "description": "Start typing a city or region to search.",
+        "defaultValue": ""
+      },
+      {
+        "type": "input",
+        "messageKey": "SlotTZState3",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "defaultValue": ""
+      },
+      {
+        "type": "input",
+        "messageKey": "SlotLabel3",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "label": "Top row timezone label",
+        "description": "Up to 3 letters shown before the time, e.g. NYC (blank: time only)",
+        "defaultValue": "",
+        "attributes": { "maxlength": 3 }
+      },
+      {
+        "type": "select",
+        "messageKey": "TextRow2",
+        "capabilities": ["HEALTH"],
+        "label": "Bottom row",
+        "defaultValue": "0",
+        "options": [
+          { "label": "None", "value": "0" },
+          { "label": "Date", "value": "12" },
+          { "label": "Time (digital)", "value": "1" },
+          { "label": "Sunrise", "value": "4" },
+          { "label": "Sunset", "value": "5" },
+          { "label": "Next sunrise or sunset", "value": "6" },
+          { "label": "Steps today", "value": "2" },
+          { "label": "Watch Battery", "value": "3" },
+          { "label": "Phone battery", "value": "15" },
+          { "label": "Current weather (icon & temperature)", "value": "13" },
+          { "label": "Forecast high | low", "value": "14" },
+          { "label": "UV index: now | today's max", "value": "7" },
+          { "label": "Precipitation: chance | amount next hour", "value": "8" },
+          { "label": "Timezone", "value": "9" },
+          { "label": "Custom text", "value": "11" },
+          { "label": "Pebble app complication 1", "value": "16" },
+          { "label": "Pebble app complication 2", "value": "17" },
+          { "label": "Pebble app complication 3", "value": "18" },
+          { "label": "Pebble app complication 4", "value": "19" },
+          { "label": "Pebble app complication 5", "value": "20" }
+        ]
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "select",
+        "messageKey": "TextRowDate2",
+        "label": "Bottom row date format",
+        "defaultValue": "0",
+        "options": [
+          { "label": "WED 9", "value": "0" },
+          { "label": "AUG 9", "value": "1" },
+          { "label": "9 AUG", "value": "2" },
+          { "label": "9", "value": "3" },
+          { "label": "09", "value": "4" },
+          { "label": "Week number (WK 48)", "value": "5" },
+          { "label": "Weekday (WED)", "value": "6" },
+          { "label": "Month (AUG)", "value": "7" }
+        ]
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "input",
+        "messageKey": "SlotText4",
+        "label": "Bottom row custom text",
+        "description": "Shown in capitals; about 8 letters fit on the smaller watches",
+        "defaultValue": "TANGENT",
+        "attributes": { "maxlength": 11 }
+      },
+      {
+        "type": "input",
+        "messageKey": "SlotTZ4",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "label": "Bottom row timezone",
+        "description": "Start typing a city or region to search.",
+        "defaultValue": ""
+      },
+      {
+        "type": "input",
+        "messageKey": "SlotTZState4",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "defaultValue": ""
+      },
+      {
+        "type": "input",
+        "messageKey": "SlotLabel4",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "label": "Bottom row timezone label",
+        "description": "Up to 3 letters shown before the time, e.g. NYC (blank: time only)",
+        "defaultValue": "",
+        "attributes": { "maxlength": 3 }
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "toggle",
+        "messageKey": "ShowAMPM",
+        "label": "Show AM/PM",
+        "description": "The time follows your watch's 12/24-hour setting; this adds AM or PM in 12-hour mode",
+        "defaultValue": false
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "toggle",
+        "messageKey": "LeadingZero12",
+        "label": "Leading zero in 12-hour times",
+        "description": "09:08 instead of 9:08 (the time, sunrise/sunset and time zones)",
+        "defaultValue": false
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "toggle",
+        "messageKey": "LeadingZero24",
+        "label": "Leading zero in 24-hour times",
+        "description": "09:08 instead of 9:08 (the time, sunrise/sunset and time zones)",
+        "defaultValue": true
+      },
+      {
+        "type": "select",
+        "messageKey": "StepSeparator",
+        "capabilities": ["HEALTH", "NOT_PLATFORM_APLITE"],
+        "label": "Steps thousands separator",
+        "defaultValue": "0",
+        "options": [
+          { "label": "Automatic (from the date language)", "value": "0" },
+          { "label": "Comma (8,432)", "value": "1" },
+          { "label": "Dot (8.432)", "value": "2" },
+          { "label": "None (8432)", "value": "3" }
+        ]
+      },
+      {
+        "type": "select",
+        "messageKey": "PrecipInches",
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "label": "Precipitation amount in",
+        "defaultValue": "0",
+        "options": [
+          { "label": "Millimetres (1.2MM)", "value": "0" },
+          { "label": "Inches (0.05IN)", "value": "1" }
+        ]
+      },
+      {
+        "type": "toggle",
+        "messageKey": "ShakeToParkHands",
+        "label": "Shake to Move Hands Aside",
+        "description": "Shake to swing the hands into a flat line (hour hand to 9, minute hand to 3) for a few seconds, so they don't cover the complications",
+        "defaultValue": false
+      },
+      {
+        "type": "slider",
+        "messageKey": "ParkHandsSeconds",
+        "label": "Hands aside for (seconds)",
+        "defaultValue": 5,
+        "min": 2,
+        "max": 20,
+        "step": 1
       },
       {
         "type": "heading",
@@ -268,7 +618,7 @@ module.exports = [
         "type": "heading",
         "id": "TZ_HEADING",
         "defaultValue": "Timezone options",
-        "description": "Use when 2nd Timezone is selected on sub-dial"
+        "description": "For the 2nd timezone on the sub-dial"
       },
       {
         "type": "toggle",
@@ -300,6 +650,14 @@ module.exports = [
         "type": "text",
         "id": "TZ_DEBUG",
         "defaultValue": ""
+      },
+      // Phone-only: the custom colours as you last set them yourself, for "My previous custom
+      // colours" in "Load colours from a preset" (modifications.js). Kept per watch, never sent
+      // to the watch (index.js). In this section because it's on every watch's page.
+      {
+        "type": "input",
+        "messageKey": "CustomColourMemory",
+        "defaultValue": ""
       }
     ]
   },
@@ -319,21 +677,21 @@ module.exports = [
         "type": "toggle",
         "messageKey": "UseWeather",
         "label": "Show Weather",
-        "description": "current condition icon & temperature replaces battery value. Also shows alerts for rain in next hour, and current very high wet bulb globe temperatures",
+        "description": "Weather for the complications (current weather, forecast, sunrise/sunset, UV, precipitation). Also shows alerts for rain in next hour, and current very high wet bulb globe temperatures",
         "defaultValue": false
     },
     {
         "type": "toggle",
+        "capabilities": ["NOT_HEALTH"],
         "messageKey": "ShowCurrent",
         "label": "Show Current Icon & Temperature",
-//        "description": "current and forecast high | low temperatures & condition icons replace battery value. Also shows alerts for rain in next hour, and current very high wet bulb globe temperatures",
         "defaultValue": true
     },
     {
         "type": "toggle",
+        "capabilities": ["NOT_HEALTH"],
         "messageKey": "ShowForecast",
-        "label": "Show Forcast High & Low Temp",
-//        "description": "current and forecast high | low temperatures & condition icons replace battery value. Also shows alerts for rain in next hour, and current very high wet bulb globe temperatures",
+        "label": "Show Forecast High & Low Temp",
         "defaultValue": true
     },
     {
@@ -429,24 +787,8 @@ module.exports = [
         "type": "toggle",
         "messageKey": "ShakeToRefreshWeather",
         "label": "Shake to Refresh Weather",
-        "description": "Request fresh weather on demand<br>(limited to one attempt per minute). If Shake to Move Hands Aside is also on, shake twice within 2 seconds to refresh",
+        "description": "Request fresh weather on demand<br>(limited to one attempt per minute). If Shake to Move Hands Aside (Complications) is also on, shake twice within 2 seconds to refresh",
         "defaultValue": true
-      },
-      {
-        "type": "toggle",
-        "messageKey": "ShakeToParkHands",
-        "label": "Shake to Move Hands Aside",
-        "description": "Shake to swing the hands into a flat line (hour hand to 9, minute hand to 3) for a few seconds, so they don't cover the weather",
-        "defaultValue": false
-      },
-      {
-        "type": "slider",
-        "messageKey": "ParkHandsSeconds",
-        "label": "Hands aside for (seconds)",
-        "defaultValue": 5,
-        "min": 2,
-        "max": 20,
-        "step": 1
       },
       {
         "type": "submit",
@@ -587,6 +929,21 @@ module.exports = [
            "defaultValue": "Custom Colours"
       },
       {
+        "type": "select",
+        "id": "LOAD_PRESET",
+        "label": "Load colours from a preset (then change them here)",
+        "defaultValue": "",
+        "options": [
+          { "label": "Choose a preset...", "value": "" },
+          { "label": "My previous custom colours", "value": "mine" },
+          { "label": "White", "value": "wh" },
+          { "label": "Black", "value": "bl" },
+          { "label": "Blue", "value": "bu" },
+          { "label": "Purple", "value": "pl" },
+          { "label": "Black & Green", "value": "gr" }
+        ]
+      },
+      {
         "type": "text",
         "id": "WATCH_PREVIEW_6",
         "defaultValue": ""
@@ -659,8 +1016,14 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Battery & Weather Text Colour",
+        "label": "Top complications colour",
         "messageKey": "BatteryWeatherColor",
+        "defaultValue": "000000"
+      },
+      {
+        "type": "color",
+        "label": "Bottom complications colour",
+        "messageKey": "BottomColor",
         "defaultValue": "000000"
       },
       {
@@ -720,6 +1083,18 @@ module.exports = [
             "type": "heading",
             "id": "CUSTOM_COLOURS_HEADING",
             "defaultValue": "Custom Colours"
+      },
+      {
+        "type": "select",
+        "id": "BW_LOAD_PRESET",
+        "label": "Load colours from a preset (then change them here)",
+        "defaultValue": "",
+        "options": [
+          { "label": "Choose a preset...", "value": "" },
+          { "label": "My previous custom colours", "value": "mine" },
+          { "label": "White Background", "value": "wh" },
+          { "label": "Black Background", "value": "bl" }
+        ]
       },
       {
         "type": "text",
@@ -793,8 +1168,16 @@ module.exports = [
       },
       {
         "type": "color",
-        "label": "Battery & Weather Text Colour",
+        "label": "Top complications colour",
         "messageKey": "BWBatteryWeatherColor",
+        "defaultValue": "000000",
+        "allowGray": true
+      },
+      {
+        "capabilities": ["NOT_PLATFORM_APLITE"],
+        "type": "color",
+        "label": "Bottom complications colour",
+        "messageKey": "BWBottomColor",
         "defaultValue": "000000",
         "allowGray": true
       },

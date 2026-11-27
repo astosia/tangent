@@ -1,7 +1,7 @@
 {
   "name": "tangent",
   "author": "astosia",
-  "version": "4.9.0",
+  "version": "5.0.0",
   "keywords": [
     "pebble",
     "watchface",
@@ -15,13 +15,62 @@
   "private": true,
   "dependencies": {
     "@rebble/clay": "^1.0.6",
-    "pebble-fctx": "^1.6.5",
+    "pebble-utf8": "^1.0.4",
     "pebble-fctx-compiler": "^1.2.2"
   },
   "pebble": {
     "displayName": "tangent",
     "uuid": "9c40a779-9f1f-41d7-94f0-c237cffcad2d",
     "sdkVersion": "3",
+    "manifestVersion": 2,
+    "usesPermissions": [
+      {
+        "name": "Internet",
+        "parameters": {
+          "domains": [
+            "open-meteo.com",
+            "openweathermap.org"
+          ]
+        },
+        "reason": "To get the weather shown on the watchface",
+        "required": false
+      },
+      {
+        "name": "Internet",
+        "parameters": {
+          "domains": [
+            "photon.komoot.io"
+          ]
+        },
+        "reason": "To find places when you search for a weather location in settings",
+        "required": false
+      },
+      {
+        "name": "Internet",
+        "parameters": {
+          "domains": [
+            "timeapi.io"
+          ]
+        },
+        "reason": "To look up the time in your second timezone, if your phone can't work it out itself",
+        "required": false
+      },
+      {
+        "name": "Location",
+        "reason": "To get the weather where you are, when no location is set in settings",
+        "required": false
+      },
+      {
+        "name": "Health",
+        "reason": "To show your step count and how it compares to your target or average",
+        "required": false
+      },
+      {
+        "name": "Timeline",
+        "reason": "To add phone disconnection pins to your timeline, if you turn them on",
+        "required": false
+      }
+    ],
     "enableMultiJS": true,
     "targetPlatforms": [
       "aplite",
@@ -36,7 +85,8 @@
       "watchface": true
     },
     "capabilities": [
-      "configurable"
+      "configurable",
+      "health"
     ],
     "messageKeys": [
       "AlwaysShowSubDial",
@@ -129,9 +179,54 @@
       "PicColor6",
       "PicColor7",
       "PicColorMemory",
+      "CustomColourMemory",
+      "StepTarget",
+      "TextRow1",
+      "TextRow2",
+      "ShowAMPM",
+      "StepSeparator",
+      "TextRowDate1",
+      "TextRowDate2",
+      "PrecipInches",
+      "Sunrise",
+      "Sunset",
+      "UVNow",
+      "UVMax",
+      "PrecipChance",
+      "PrecipAmount",
       "TetherSeq",
       "TetherType",
-      "TetherTime"
+      "TetherTime",
+      "TopSlot1",
+      "TopSlot2",
+      "TopDate1",
+      "TopDate2",
+      "SlotText1",
+      "SlotText2",
+      "SlotText3",
+      "SlotText4",
+      "SlotTZ1",
+      "SlotTZ3",
+      "SlotTZ4",
+      "SlotTZState1",
+      "SlotTZState3",
+      "SlotTZState4",
+      "SlotLabel1",
+      "SlotLabel3",
+      "SlotLabel4",
+      "SlotOffset1",
+      "SlotOffset3",
+      "SlotOffset4",
+      "BottomColor",
+      "BWBottomColor",
+      "LeadingZero12",
+      "LeadingZero24",
+      "PhoneBattery",
+      "AppText1",
+      "AppText2",
+      "AppText3",
+      "AppText4",
+      "AppText5"
     ],
     "resources": {
       "media": [
@@ -226,6 +321,50 @@
           "name": "FONT_WEATHERICONS_16",
           "targetPlatforms": [
             "aplite",
+            "basalt",
+            "chalk",
+            "diorite",
+            "flint"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/WeatherIcons-RegularMod.ttf",
+          "characterRegex": "[]",
+          "name": "FONT_SUNICONS_16",
+          "targetPlatforms": [
+            "emery",
+            "gabbro"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/WeatherIcons-RegularMod.ttf",
+          "characterRegex": "[]",
+          "name": "FONT_SUNICONS_12",
+          "targetPlatforms": [
+            "basalt",
+            "chalk",
+            "diorite",
+            "flint"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/dripicons-v2.ttf",
+          "characterRegex": "[$]",
+          "name": "FONT_PHONEICON_16",
+          "targetPlatforms": [
+            "emery",
+            "gabbro"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/dripicons-v2.ttf",
+          "characterRegex": "[$]",
+          "name": "FONT_PHONEICON_12",
+          "targetPlatforms": [
             "basalt",
             "chalk",
             "diorite",

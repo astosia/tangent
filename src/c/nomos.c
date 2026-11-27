@@ -5,9 +5,11 @@
 #include "utils/month.h"
 #include "utils/MathUtils.h"
 #include "utils/Weather.h"
-#include <pebble-fctx/fctx.h>
-#include <pebble-fctx/fpath.h>
-#include <pebble-fctx/ffont.h>
+// fctx is kept in src/c/fctx (pebble-fctx 1.6.5, changed so its anti-aliasing can be drawn in bands
+// of the screen where there isn't memory for all of it: see prv_fill_text and src/c/fctx/README.md)
+#include "fctx/fctx.h"
+#include "fctx/fpath.h"
+#include "fctx/ffont.h"
 
 // Weather (and the extra layers/fonts/settings it needs) is built for every watch. The HAS_WEATHER
 // blocks are kept so it's easy to leave a platform out again (e.g. if aplite runs short of memory).
@@ -23,6 +25,93 @@
 ////remember to comment out before publishing!!!!
 #define SECONDS_TICK_INTERVAL_MS 1000
 #define SWEEP_RATE_DEFAULT 5   // Sweep Second Hand: second-hand updates per second (settings.SweepRate)
+
+// Sub-dial options (settings.SubDialChoice) added with the steps meter; 0-6 are as before
+#define SUBDIAL_STEPS_TARGET 7    // today's steps vs your target (settings.StepTarget)
+#define SUBDIAL_STEPS_AVERAGE 8   // today's steps vs your average day, with a marker for your usual pace
+#define STEP_TARGET_DEFAULT 10    // thousands of steps
+#define STEPS_MARKER_HALF_DEG 12  // half the width of the sub-dial's "usual by now" marker
+
+// aplite has only 24KB for everything, so it keeps the original fixed top layout (the battery
+// value or current weather, and the forecast: EnableBattery, ShowCurrent, ShowForecast) and has no
+// complication slots, text rows, phone battery, Pebble app complications or timeline pins.
+#ifndef PBL_PLATFORM_APLITE
+#define HAS_COMPLICATIONS
+#define HAS_TIMELINE_PINS
+#endif
+#ifdef HAS_COMPLICATIONS
+#define SHOW_TOP_BATTERY() (settings.TopSlot1 == TEXT_ROW_BATTERY)
+#define SHOW_TOP_WEATHER() (settings.TopSlot1 == TEXT_ROW_WEATHER)
+#define SHOW_TOP_FORECAST() (settings.TopSlot2 == TEXT_ROW_FORECAST)
+#else
+#define SHOW_TOP_BATTERY() (settings.EnableBattery && !(settings.UseWeather && settings.ShowCurrent))
+#define SHOW_TOP_WEATHER() (settings.ShowCurrent)
+#define SHOW_TOP_FORECAST() (settings.ShowForecast)
+#endif
+
+// What a complication slot shows: the two at the top (settings.TopSlot1/2) and the two text rows
+// above the date (settings.TextRow1/2, while the sub-dial is off)
+#define TEXT_ROW_NONE 0
+#define TEXT_ROW_TIME 1
+#define TEXT_ROW_STEPS 2
+#define TEXT_ROW_BATTERY 3      // "80%"
+#define TEXT_ROW_SUNRISE 4      // the weather's sunrise, with its icon
+#define TEXT_ROW_SUNSET 5
+#define TEXT_ROW_SUN_NEXT 6     // whichever of sunrise or sunset comes next
+#define TEXT_ROW_UV 7           // "UV 3 | 6": now | today's maximum
+#define TEXT_ROW_PRECIP 8       // "30% | 1.2MM": chance | amount in the next hour
+#define TEXT_ROW_TZ2 9          // the slot's own time zone, "NYC 05:08"
+#define TEXT_ROW_TZ3 10         // (test builds' 3rd timezone: now the same as TEXT_ROW_TZ2)
+#define TEXT_ROW_CUSTOM 11      // the slot's own text
+#define TEXT_ROW_DATE 12        // in the slot's own date format
+#define TEXT_ROW_WEATHER 13     // the current weather's icon and temperature
+#define TEXT_ROW_FORECAST 14    // today's high | low
+#define TEXT_ROW_PHONE_BATTERY 15  // the phone's battery, from the Pebble app's phone plugin (index.js)
+#define TEXT_ROW_APP_FIRST 16   // 16-20: the 1st-5th reading on the Pebble app's Complications list,
+#define TEXT_ROW_APP_LAST 20    // whatever plugin gives it (index.js sends it as text)
+#define TEXT_ROW_LAST TEXT_ROW_APP_LAST
+// The slots, as indexes into SlotData
+#define SLOT_TOP1 0
+#define SLOT_TOP2 1             // between the alert icons: short items only (custom text up to 5)
+#define SLOT_ROW1 2
+#define SLOT_ROW2 3
+#define SLOT_TOP2_TEXT_MAX 5
+
+// Date formats (settings.DateFormat for the date at the bottom, TextRowDate1/2 for the rows)
+#define DATE_FMT_WEEKDAY_DAY 0  // WED 30
+#define DATE_FMT_MONTH_DAY 1    // AUG 30
+#define DATE_FMT_DAY_MONTH 2    // 30 AUG
+#define DATE_FMT_DAY 3          // 9
+#define DATE_FMT_DAY2 4         // 09
+#define DATE_FMT_WEEK 5         // WK 48, KW 48, V 48... (ISO week: weeks start on Monday, week 1 holds the first Thursday)
+#define DATE_FMT_WEEKDAY 6      // WED
+#define DATE_FMT_MONTH 7        // AUG
+#define DATE_FMT_LAST DATE_FMT_MONTH
+#define CUSTOM_TEXT_DEFAULT "TANGENT"
+#define TEXT_ROW_EM_PCT 75    // their size, of the date's
+#define TEXT_ROW_CAP_PCT 80   // Tangent's capitals are 0.8 em tall (cap-height in the ffonts)
+#define TEXT_ROW_GAP_PCT 45   // the gap between the rows, of the capitals' height
+#define TOP_SLOT_CAP_MIDDLE_PCT 45 // the top slots: the capitals' middle, this % of the em below fctx's "top" anchor
+#define TEXT_ROW_ICON_TOP_PCT 69 // an icon's box top sits this % of its pixel size above the text's cap middle:
+                                // as gabbro's current weather icon sits against its temperature
+#if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+#define WEATHER_ICON_PX 20     // FONT_WEATHERICONS_20
+#define SUN_ICON_PX 16         // FONT_SUNICONS_16
+#define PHONE_ICON_PX 16       // FONT_PHONEICON_16
+#else
+#define WEATHER_ICON_PX 16     // FONT_WEATHERICONS_16
+#define SUN_ICON_PX 12         // FONT_SUNICONS_12
+#define PHONE_ICON_PX 12       // FONT_PHONEICON_12
+#endif
+// The phone icon (dripicons' device-mobile, a full em tall from the baseline): its box top this %
+// of its size above the text's cap middle, which centres it on the capitals as the sun icons are
+#define PHONE_ICON_TOP_PCT 54
+#define PHONE_ICON "$"
+
+// A setting sent as a number or as text ("1"): Clay sends select values as text, sliders as numbers
+static int prv_tuple_int(const Tuple *t) {
+  return t->type == TUPLE_CSTRING ? atoi(t->value->cstring) : (int)t->value->int32;
+}
 
 
 // Main window and layers
@@ -93,9 +182,24 @@ static GFont
     #endif
     FontBTQTIcons;
 
+#ifdef HAS_COMPLICATIONS
+static GFont FontPhoneIcon;   // the phone battery complication's icon
+
+// The phone's battery (0-100), as the phone last sent it; -1 until it does (not kept: the phone
+// sends it again whenever the watchface starts)
+static int8_t s_phone_battery = -1;
+
+// The Pebble app's complications (TEXT_ROW_APP_*), as text the phone last sent: kept, so they
+// still show after a restart while the phone is away (an estimate like Muninn's stays useful)
+#define APP_TEXT_KEY 154
+#define APP_TEXT_COUNT 5
+static char s_app_text[APP_TEXT_COUNT][16];
+#endif
+
 #ifdef HAS_WEATHER
 static GFont
-    FontWeatherIcons;
+    FontWeatherIcons,
+    FontSunIcons;   // the text rows' sunrise/sunset icons: 16px on emery/gabbro, 12px (in step with the smaller text) elsewhere
 #endif
 
 FFont* FCTX_Font;
@@ -153,6 +257,9 @@ static AppTimer *s_park_hands_timer = NULL;
 #define PARK_HANDS_MAX_SECONDS 60
 #endif
 static ClaySettings settings;
+#ifdef HAS_COMPLICATIONS
+static SlotData s_slots;
+#endif
 
 
 // Date position struct for different platforms
@@ -544,10 +651,36 @@ static void prv_set_picture_default_colours(int style);
 // Save settings to persistent storage
 static void prv_save_settings(void) {
   persist_write_data(SETTINGS_KEY, &settings, sizeof(settings));
+  #ifdef HAS_COMPLICATIONS
+  persist_write_data(SLOT_DATA_KEY, &s_slots, sizeof(s_slots));
+  #endif
 }
 
 
 // Set default settings
+// The settings added with the extra text-row options, as for a fresh install
+static void prv_default_row_settings(void) {
+  settings.ReservedText[0] = settings.ReservedLabel2[0] = settings.ReservedLabel3[0] = 0;
+  settings.reserved_offset3 = 0;
+  settings.TextRowDate1 = settings.TextRowDate2 = DATE_FMT_WEEKDAY_DAY;
+  settings.PrecipInches = false;
+  settings.SunriseMin = settings.SunsetMin = -1;
+  settings.UVNow = settings.UVMax = settings.PrecipChance = -1;
+  settings.PrecipTenthMm = -1;
+}
+
+#ifdef HAS_COMPLICATIONS
+// Each slot's custom text and time zone, as for a fresh install
+static void prv_default_slot_data(void) {
+  for (int i = 0; i < SLOT_COUNT; i++) {
+    snprintf(s_slots.Text[i], sizeof(s_slots.Text[i]), "%s", CUSTOM_TEXT_DEFAULT);
+    s_slots.Label[i][0] = 0;
+    s_slots.Offset[i] = 0;
+  }
+  s_slots.Text[SLOT_TOP2][SLOT_TOP2_TEXT_MAX] = 0;
+}
+#endif
+
 static void prv_default_settings(void) {
   settings.AlwaysShowSubDial = false;
   settings.SecondsVisibleTime = 15;
@@ -571,6 +704,10 @@ static void prv_default_settings(void) {
   settings.BatteryLineColor = GColorOrange;
   settings.BWDateColor = GColorWhite;
   settings.BWBatteryWeatherColor = GColorWhite;
+  settings.BottomColor = settings.BatteryWeatherColor;
+  settings.BWBottomColor = settings.BWBatteryWeatherColor;
+  settings.LeadingZero12 = false;
+  settings.LeadingZero24 = true;
   settings.BWBackgroundColor1 = GColorBlack;
   settings.BWSubDialColor = GColorBlack;
   settings.BWMinuteHandShadowColor = GColorDarkGray;
@@ -606,6 +743,18 @@ static void prv_default_settings(void) {
   settings.SmoothSweep = false;
   settings.SweepRate = SWEEP_RATE_DEFAULT;
   settings.TimelinePins = false;
+  settings.StepTarget = STEP_TARGET_DEFAULT;
+  settings.TextRow1 = TEXT_ROW_NONE;
+  settings.TextRow2 = TEXT_ROW_NONE;
+  settings.ShowAMPM = false;
+  settings.StepSeparator = 0;
+  prv_default_row_settings();
+  settings.TopSlot1 = TEXT_ROW_BATTERY;
+  settings.TopSlot2 = TEXT_ROW_FORECAST;
+  settings.TopDate1 = settings.TopDate2 = DATE_FMT_WEEKDAY_DAY;
+  #ifdef HAS_COMPLICATIONS
+  prv_default_slot_data();
+  #endif
   snprintf(settings.DateLanguage, sizeof(settings.DateLanguage), "%s", "auto");
   settings.ShowBTQTIcons = true;
   #ifdef PBL_COLOR
@@ -785,8 +934,8 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
     }
   }
 
-  // Move the hands aside for ParkHandsSeconds so the weather can be read
-  if (settings.UseWeather && settings.ShakeToParkHands) {
+  // Move the hands aside for ParkHandsSeconds so the complications can be read
+  if (settings.ShakeToParkHands) {
     int park_seconds = settings.ParkHandsSeconds;
     if (park_seconds < PARK_HANDS_MIN_SECONDS || park_seconds > PARK_HANDS_MAX_SECONDS) { park_seconds = 5; }
     s_hands_parked = true;
@@ -822,7 +971,7 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
 static void prv_update_accel_tap_subscription(void) {
   bool need_accel_tap = (settings.SubDialChoice == 2 || settings.SubDialChoice == 6);
   #ifdef HAS_WEATHER
-  need_accel_tap = need_accel_tap || (settings.UseWeather && (settings.ShakeToRefreshWeather || settings.ShakeToParkHands));
+  need_accel_tap = need_accel_tap || settings.ShakeToParkHands || (settings.UseWeather && settings.ShakeToRefreshWeather);
   #endif
 
   if (need_accel_tap) {
@@ -970,6 +1119,7 @@ static void prv_weather_reconnect_delay_callback(void *data) {
 // `pebble logs` without disconnecting. Set back to 0 when done.
 #define TETHER_TEST_ON_LAUNCH  0
 
+#ifdef HAS_TIMELINE_PINS   // (aplite: only the outage itself is tracked, for the reconnect buzz)
 typedef struct {
   int32_t seq;
   int32_t type;
@@ -1082,6 +1232,8 @@ static void prv_outbox_failed_handler(DictionaryIterator *iter, AppMessageResult
   }
 }
 
+#endif
+
 static int32_t prv_tether_pending_drop(void) {
   return persist_exists(TETHER_DROP_KEY) ? persist_read_int(TETHER_DROP_KEY) : 0;
 }
@@ -1101,25 +1253,31 @@ static bool prv_tether_connection_changed(bool connected) {
   if (dropped > 0) {
     persist_write_int(TETHER_DROP_KEY, 0);
     if (now - dropped >= TETHER_MIN_GAP_SEC) {
+      #ifdef HAS_TIMELINE_PINS
       if (settings.TimelinePins) {   // the outage still counts (reconnect buzz) when pins are off
         prv_tether_add(TETHER_EVENT_LOST, (time_t)dropped);
         prv_tether_add(TETHER_EVENT_BACK, now);
         prv_tether_save();
       }
+      #endif
       logged = true;
     }
   }
+  #ifdef HAS_TIMELINE_PINS
   s_tether_retries = 0;
   prv_tether_schedule(TETHER_SEND_DELAY_MS);
+  #endif
   return logged;
 }
 
 // Called once at launch: load the log and catch up on anything missed while
 // the watchface wasn't running.
 static void prv_tether_init(void) {
+  #ifdef HAS_TIMELINE_PINS
   if (persist_read_data(TETHER_LOG_KEY, &s_tether, sizeof(s_tether)) != (int)sizeof(s_tether)) {
     memset(&s_tether, 0, sizeof(s_tether));
   }
+  #endif
   if (connection_service_peek_pebble_app_connection()) {
     // Reconnected while another app/face was showing: pair it with "now".
     prv_tether_connection_changed(true);
@@ -1127,7 +1285,7 @@ static void prv_tether_init(void) {
     // Already disconnected at launch; the real drop time is unknown, so use now.
     persist_write_int(TETHER_DROP_KEY, (int32_t)time(NULL));
   }
-#if TETHER_TEST_ON_LAUNCH
+#if TETHER_TEST_ON_LAUNCH && defined(HAS_TIMELINE_PINS)
   APP_LOG(APP_LOG_LEVEL_INFO, "tether: queueing a test pin");
   prv_tether_add(TETHER_EVENT_LOST, time(NULL) - 5 * 60);   // real "disconnected" pin
   prv_tether_add(TETHER_EVENT_BACK, time(NULL) - 4 * 60);   // real "reconnected" pin
@@ -1154,6 +1312,7 @@ static void prv_reconnect_vibe(void) {
 // (This is a live reconnect, not app launch, so it's independent of "Refresh weather on launch".  That setting still controls whether launching the watchface itself triggers a fetch.)
 static void bluetooth_connection_handler(bool connected) {
   bluetooth_vibe_icon(connected);
+  layer_mark_dirty(s_date_battery_logo_layer);   // the phone battery complication: "--" while away
 
   if (prv_tether_connection_changed(connected) && connected) {
     prv_reconnect_vibe();
@@ -1191,6 +1350,49 @@ static void prv_load_settings(void) {
   }
   if (bytes_read <= (int)offsetof(ClaySettings, TimelinePins)) {
     settings.TimelinePins = false;             // saved before timeline pins were optional
+  }
+  if (bytes_read <= (int)offsetof(ClaySettings, StepTarget)) {
+    // saved before the steps sub-dial and the text rows
+    settings.StepTarget = STEP_TARGET_DEFAULT;
+    settings.TextRow1 = TEXT_ROW_NONE;
+    settings.TextRow2 = TEXT_ROW_NONE;
+    settings.ShowAMPM = false;
+    settings.StepSeparator = 0;
+  }
+  if (bytes_read <= (int)offsetof(ClaySettings, ReservedText)) {
+    prv_default_row_settings();   // saved before the extra text-row options
+  }
+  if (bytes_read <= (int)offsetof(ClaySettings, TopSlot1)) {
+    // saved before the top complication slots: show what the old switches did
+    settings.TopSlot1 = (settings.UseWeather && settings.ShowCurrent) ? TEXT_ROW_WEATHER :
+                        settings.EnableBattery ? TEXT_ROW_BATTERY : TEXT_ROW_NONE;
+    settings.TopSlot2 = settings.ShowForecast ? TEXT_ROW_FORECAST : TEXT_ROW_NONE;
+    settings.TopDate1 = settings.TopDate2 = DATE_FMT_WEEKDAY_DAY;
+  }
+  if (bytes_read <= (int)offsetof(ClaySettings, BottomColor)) {
+    // saved before the bottom complications had their own colour, and the leading-zero choices
+    settings.BottomColor = settings.BatteryWeatherColor;
+    settings.BWBottomColor = settings.BWBatteryWeatherColor;
+    settings.LeadingZero12 = false;
+    settings.LeadingZero24 = true;
+  }
+  if (settings.TopSlot1 > TEXT_ROW_LAST) { settings.TopSlot1 = TEXT_ROW_BATTERY; }
+  if (settings.TopSlot2 > TEXT_ROW_LAST) { settings.TopSlot2 = TEXT_ROW_FORECAST; }
+  #ifdef HAS_COMPLICATIONS
+  if (persist_read_data(APP_TEXT_KEY, s_app_text, sizeof(s_app_text)) != (int)sizeof(s_app_text)) {
+    memset(s_app_text, 0, sizeof(s_app_text));
+  }
+  for (int i = 0; i < APP_TEXT_COUNT; i++) { s_app_text[i][sizeof(s_app_text[i]) - 1] = 0; }
+  if (persist_read_data(SLOT_DATA_KEY, &s_slots, sizeof(s_slots)) != (int)sizeof(s_slots)) {
+    prv_default_slot_data();
+  }
+  for (int i = 0; i < SLOT_COUNT; i++) {   // always terminated, whatever was saved
+    s_slots.Text[i][sizeof(s_slots.Text[i]) - 1] = 0;
+    s_slots.Label[i][sizeof(s_slots.Label[i]) - 1] = 0;
+  }
+  #endif
+  if (settings.StepTarget < 1 || settings.StepTarget > 20) {
+    settings.StepTarget = STEP_TARGET_DEFAULT;
   }
 
   #ifdef HAS_WEATHER
@@ -1238,6 +1440,7 @@ static void apply_bw_theme(GColor fg, GColor bg, Tuple *shadow_t) {
   settings.BWMinuteHandShadowColor = settings.BWShadowOn ? GColorDarkGray : bg;
   settings.BWDateColor = fg;
   settings.BWBatteryWeatherColor = fg;
+  settings.BWBottomColor = fg;
   settings.BWSecondsHandColor = fg;
   settings.BWMonthHandColor = fg;
   settings.BWMinHandBatLineColor = fg;
@@ -1284,6 +1487,7 @@ static bool apply_colour_theme(const char *id, Tuple *shadow_t) {
     settings.MinorTickColor = t->minor_tick;
     settings.DateColor = t->text;
     settings.BatteryWeatherColor = t->text;
+    settings.BottomColor = t->text;
     settings.HourDigitsColor = t->text;
     settings.MajorTickColor = t->text;
     settings.MinutesHandColor = t->minutes_hand;
@@ -1320,6 +1524,11 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *bwthemeselect_t = dict_find(iter, MESSAGE_KEY_BWThemeSelect);
   Tuple *bwdate_color_t = dict_find(iter, MESSAGE_KEY_BWDateColor);
   Tuple *bwbatweather_color_t = dict_find(iter, MESSAGE_KEY_BWBatteryWeatherColor);
+  Tuple *bwbottom_color_t = dict_find(iter, MESSAGE_KEY_BWBottomColor);
+  #ifdef HAS_COMPLICATIONS
+  Tuple *leadzero12_t = dict_find(iter, MESSAGE_KEY_LeadingZero12);
+  Tuple *leadzero24_t = dict_find(iter, MESSAGE_KEY_LeadingZero24);
+  #endif
   Tuple *bwbg_color1_t = dict_find(iter, MESSAGE_KEY_BWBackgroundColor1);
   Tuple *bwbg_color2_t = dict_find(iter, MESSAGE_KEY_BWMinuteHandShadowColor);
   Tuple *bwtext_color1_t = dict_find(iter, MESSAGE_KEY_BWMinHandBatLineColor);
@@ -1355,6 +1564,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *text_color2_t = dict_find(iter, MESSAGE_KEY_MinorTickColor);
   Tuple *date_color_t = dict_find(iter, MESSAGE_KEY_DateColor);
   Tuple *batweather_color_t = dict_find(iter, MESSAGE_KEY_BatteryWeatherColor);
+  Tuple *bottom_color_t = dict_find(iter, MESSAGE_KEY_BottomColor);
   Tuple *hours_color_t = dict_find(iter, MESSAGE_KEY_HourDigitsColor);
   Tuple *minutes_color_t = dict_find(iter, MESSAGE_KEY_MinutesHandColor);
   Tuple *hourhand_color_t = dict_find(iter, MESSAGE_KEY_HourHandColor);
@@ -1371,6 +1581,33 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *smoothsweep_t = dict_find(iter, MESSAGE_KEY_SmoothSweep);
   Tuple *sweeprate_t = dict_find(iter, MESSAGE_KEY_SweepRate);
   Tuple *timelinepins_t = dict_find(iter, MESSAGE_KEY_TimelinePins);
+  Tuple *steptarget_t = dict_find(iter, MESSAGE_KEY_StepTarget);
+  #ifdef HAS_COMPLICATIONS   // (aplite has the original fixed layout: no complication slots)
+  Tuple *textrow1_t = dict_find(iter, MESSAGE_KEY_TextRow1);
+  Tuple *textrow2_t = dict_find(iter, MESSAGE_KEY_TextRow2);
+  Tuple *showampm_t = dict_find(iter, MESSAGE_KEY_ShowAMPM);
+  Tuple *stepsep_t = dict_find(iter, MESSAGE_KEY_StepSeparator);
+  Tuple *topslot1_t = dict_find(iter, MESSAGE_KEY_TopSlot1);
+  Tuple *topslot2_t = dict_find(iter, MESSAGE_KEY_TopSlot2);
+  Tuple *topdate1_t = dict_find(iter, MESSAGE_KEY_TopDate1);
+  Tuple *topdate2_t = dict_find(iter, MESSAGE_KEY_TopDate2);
+  Tuple *slottext_t[SLOT_COUNT] = { dict_find(iter, MESSAGE_KEY_SlotText1), dict_find(iter, MESSAGE_KEY_SlotText2),
+                                    dict_find(iter, MESSAGE_KEY_SlotText3), dict_find(iter, MESSAGE_KEY_SlotText4) };
+  Tuple *rowdate1_t = dict_find(iter, MESSAGE_KEY_TextRowDate1);
+  Tuple *rowdate2_t = dict_find(iter, MESSAGE_KEY_TextRowDate2);
+  // each slot's time zone (the second top row has none: too short)
+  Tuple *slotlabel_t[SLOT_COUNT] = { dict_find(iter, MESSAGE_KEY_SlotLabel1), NULL,
+                                     dict_find(iter, MESSAGE_KEY_SlotLabel3), dict_find(iter, MESSAGE_KEY_SlotLabel4) };
+  Tuple *slotoffset_t[SLOT_COUNT] = { dict_find(iter, MESSAGE_KEY_SlotOffset1), NULL,
+                                      dict_find(iter, MESSAGE_KEY_SlotOffset3), dict_find(iter, MESSAGE_KEY_SlotOffset4) };
+  Tuple *precipinches_t = dict_find(iter, MESSAGE_KEY_PrecipInches);
+  Tuple *sunrise_t = dict_find(iter, MESSAGE_KEY_Sunrise);
+  Tuple *sunset_t = dict_find(iter, MESSAGE_KEY_Sunset);
+  Tuple *uvnow_t = dict_find(iter, MESSAGE_KEY_UVNow);
+  Tuple *uvmax_t = dict_find(iter, MESSAGE_KEY_UVMax);
+  Tuple *precipchance_t = dict_find(iter, MESSAGE_KEY_PrecipChance);
+  Tuple *precipamount_t = dict_find(iter, MESSAGE_KEY_PrecipAmount);
+  #endif
   Tuple *datelang_t = dict_find(iter, MESSAGE_KEY_DateLanguage);
 
   ///////Weather
@@ -1388,6 +1625,31 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple * rainsoon_t = dict_find(iter, MESSAGE_KEY_RainSoon);
   Tuple * rainamount_t = dict_find(iter, MESSAGE_KEY_RainAmount);
   Tuple * wbgtlevel_t = dict_find(iter, MESSAGE_KEY_WBGTLevel);
+  #ifdef HAS_COMPLICATIONS
+  Tuple *phonebattery_t = dict_find(iter, MESSAGE_KEY_PhoneBattery);
+  {
+    const uint32_t app_text_keys[APP_TEXT_COUNT] = { MESSAGE_KEY_AppText1, MESSAGE_KEY_AppText2,
+                                                     MESSAGE_KEY_AppText3, MESSAGE_KEY_AppText4,
+                                                     MESSAGE_KEY_AppText5 };
+    bool app_text_changed = false;
+    for (int i = 0; i < APP_TEXT_COUNT; i++) {
+      Tuple *t = dict_find(iter, app_text_keys[i]);
+      if (t && t->type == TUPLE_CSTRING) {
+        snprintf(s_app_text[i], sizeof(s_app_text[i]), "%s", t->value->cstring);
+        app_text_changed = true;
+      }
+    }
+    if (app_text_changed) {
+      persist_write_data(APP_TEXT_KEY, s_app_text, sizeof(s_app_text));
+      layer_mark_dirty(s_date_battery_logo_layer);
+    }
+  }
+  if (phonebattery_t) {
+    int level = prv_tuple_int(phonebattery_t);
+    s_phone_battery = (level >= 0 && level <= 100) ? level : -1;
+    layer_mark_dirty(s_date_battery_logo_layer);
+  }
+  #endif
   Tuple * refreshonlaunch_t = dict_find(iter, MESSAGE_KEY_RefreshWeatherOnLaunch);
   Tuple * shaketorefresh_t = dict_find(iter, MESSAGE_KEY_ShakeToRefreshWeather);
   Tuple * shaketopark_t = dict_find(iter, MESSAGE_KEY_ShakeToParkHands);
@@ -1504,10 +1766,99 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   if (timelinepins_t) {
       settings.TimelinePins = timelinepins_t->value->int32 == 1;
   }
+  if (steptarget_t) {
+      int target = prv_tuple_int(steptarget_t) / 1000;   // the slider sends steps (1000-20000)
+      if (target >= 1 && target <= 20) {
+        settings.StepTarget = target;
+      }
+      layer_mark_dirty(s_canvas_month_hand);
+  }
+  #ifdef HAS_COMPLICATIONS
+  if (textrow1_t) {
+      int row = prv_tuple_int(textrow1_t);
+      settings.TextRow1 = (row >= TEXT_ROW_NONE && row <= TEXT_ROW_LAST) ? row : TEXT_ROW_NONE;
+  }
+  if (textrow2_t) {
+      int row = prv_tuple_int(textrow2_t);
+      settings.TextRow2 = (row >= TEXT_ROW_NONE && row <= TEXT_ROW_LAST) ? row : TEXT_ROW_NONE;
+  }
+  if (leadzero12_t) { settings.LeadingZero12 = leadzero12_t->value->int32 == 1; }
+  if (leadzero24_t) { settings.LeadingZero24 = leadzero24_t->value->int32 == 1; }
+  if (showampm_t) {
+      settings.ShowAMPM = showampm_t->value->int32 == 1;
+  }
+  if (stepsep_t) {
+      int sep = prv_tuple_int(stepsep_t);
+      settings.StepSeparator = (sep >= 0 && sep <= 3) ? sep : 0;
+  }
+  bool slots_changed = false;
+  for (int i = 0; i < SLOT_COUNT; i++) {
+    if (slottext_t[i]) {
+      snprintf(s_slots.Text[i], sizeof(s_slots.Text[i]), "%s", slottext_t[i]->value->cstring);
+      slots_changed = true;
+    }
+  }
+  s_slots.Text[SLOT_TOP2][SLOT_TOP2_TEXT_MAX] = 0;
+  if (topslot1_t) {
+      int kind = prv_tuple_int(topslot1_t);
+      settings.TopSlot1 = (kind >= TEXT_ROW_NONE && kind <= TEXT_ROW_LAST) ? kind : TEXT_ROW_NONE;
+  }
+  if (topslot2_t) {
+      int kind = prv_tuple_int(topslot2_t);
+      settings.TopSlot2 = (kind >= TEXT_ROW_NONE && kind <= TEXT_ROW_LAST) ? kind : TEXT_ROW_NONE;
+  }
+  if (topdate1_t) {
+      int fmt = prv_tuple_int(topdate1_t);
+      settings.TopDate1 = (fmt >= 0 && fmt <= DATE_FMT_LAST) ? fmt : DATE_FMT_WEEKDAY_DAY;
+  }
+  if (topdate2_t) {
+      int fmt = prv_tuple_int(topdate2_t);
+      settings.TopDate2 = (fmt >= 0 && fmt <= DATE_FMT_LAST) ? fmt : DATE_FMT_WEEKDAY_DAY;
+  }
+  if (topslot1_t || topslot2_t || topdate1_t || topdate2_t) {
+      slots_changed = true;
+      layer_mark_dirty(s_canvas_battery);   // the battery value/meter and the weather
+      #ifdef HAS_WEATHER
+      layer_mark_dirty(s_canvas_weather);
+      #endif
+  }
+  if (rowdate1_t) {
+      int fmt = prv_tuple_int(rowdate1_t);
+      settings.TextRowDate1 = (fmt >= 0 && fmt <= DATE_FMT_LAST) ? fmt : DATE_FMT_WEEKDAY_DAY;
+  }
+  if (rowdate2_t) {
+      int fmt = prv_tuple_int(rowdate2_t);
+      settings.TextRowDate2 = (fmt >= 0 && fmt <= DATE_FMT_LAST) ? fmt : DATE_FMT_WEEKDAY_DAY;
+  }
+  bool rows_changed = slots_changed || textrow1_t || textrow2_t || showampm_t || leadzero12_t || leadzero24_t || stepsep_t || rowdate1_t || rowdate2_t
+                      || wtemp_t || iconnow_tuple || wforetemp_t || tzoffset_t;
+  for (int i = 0; i < SLOT_COUNT; i++) {
+    if (slotlabel_t[i]) {
+      snprintf(s_slots.Label[i], sizeof(s_slots.Label[i]), "%s", slotlabel_t[i]->value->cstring);
+      rows_changed = true;
+    }
+    if (slotoffset_t[i]) {
+      s_slots.Offset[i] = prv_tuple_int(slotoffset_t[i]);
+      rows_changed = true;
+    }
+  }
+  if (precipinches_t) { settings.PrecipInches = prv_tuple_int(precipinches_t) == 1; }   // a select: "0" mm, "1" inches
+  if (sunrise_t) { settings.SunriseMin = prv_tuple_int(sunrise_t); }
+  if (sunset_t) { settings.SunsetMin = prv_tuple_int(sunset_t); }
+  if (uvnow_t) { settings.UVNow = prv_tuple_int(uvnow_t); }
+  if (uvmax_t) { settings.UVMax = prv_tuple_int(uvmax_t); }
+  if (precipchance_t) { settings.PrecipChance = prv_tuple_int(precipchance_t); }
+  if (precipamount_t) { settings.PrecipTenthMm = prv_tuple_int(precipamount_t); }
+  rows_changed = rows_changed || precipinches_t || sunrise_t || sunset_t
+                 || uvnow_t || uvmax_t || precipchance_t || precipamount_t;
+  if (rows_changed) {
+      layer_mark_dirty(s_date_battery_logo_layer);
+  }
+  #endif
 
   if (subdialchoice_t) {
       int value = atoi(subdialchoice_t->value->cstring);
-      if (value >= 0 && value <= 6) {
+      if (value >= 0 && value <= SUBDIAL_STEPS_AVERAGE) {
         settings.SubDialChoice = value;
       }
       layer_mark_dirty(s_canvas_tz);
@@ -1721,6 +2072,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     settings.BWBatteryWeatherColor = GColorFromHEX(bwbatweather_color_t->value->int32);
                     layer_mark_dirty(s_date_battery_logo_layer);
                   }
+                  if (bwbottom_color_t) {
+                    settings.BWBottomColor = GColorFromHEX(bwbottom_color_t->value->int32);
+                    layer_mark_dirty(s_date_battery_logo_layer);
+                  }
 
                   if (bwbg_color1_t) {
                     settings.BWBackgroundColor1 = GColorFromHEX(bwbg_color1_t->value->int32);
@@ -1822,6 +2177,10 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
                     layer_mark_dirty(s_canvas_layer);
                     layer_mark_dirty(s_date_battery_logo_layer);
                   }
+                  if (bottom_color_t) {
+                    settings.BottomColor = GColorFromHEX(bottom_color_t->value->int32);
+                    layer_mark_dirty(s_date_battery_logo_layer);
+                  }
                   if (batweather_color_t) {
                     settings.BatteryWeatherColor = GColorFromHEX(batweather_color_t->value->int32);
                     layer_mark_dirty(s_date_battery_logo_layer);
@@ -1885,23 +2244,357 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
 }
 
+// The current time lives in our own copy (g_local_time), not in the buffer localtime() returns:
+// that buffer is shared, and the firmware's health functions (the steps sub-dial and steps row)
+// overwrite it with the start of the day, which froze the hands and time row at 12:00.
 static void refresh_current_time(void) {
   time_t now = time(NULL);
   g_current_epoch = now;
-  prv_tick_time = localtime(&now);
+  g_local_time = *localtime(&now);
+  prv_tick_time = &g_local_time;
 }
 
 // Recomputes everything that depends on the minute/date. Called on every minute
 // tick, and after settings arrive that change what the time means (e.g. a new
 // second-timezone offset).
+// ---- Steps (sub-dial options 7 and 8, and the steps text row) -------------------------------
+// Read once a minute (update_time_state) rather than on every redraw: the averages in
+// particular are a slow query. -1 = not available (no health data, or not allowed).
+#if defined(PBL_HEALTH)
+static int32_t s_steps_today = -1;
+static int32_t s_steps_avg_day = -1;   // your average whole day (sub-dial 8: a full turn)
+static int32_t s_steps_avg_now = -1;   // your average by this time of day (sub-dial 8: the marker)
+#endif
+
+static bool prv_subdial_shows_steps(void) {
+  return settings.SubDialChoice == SUBDIAL_STEPS_TARGET || settings.SubDialChoice == SUBDIAL_STEPS_AVERAGE;
+}
+
+#ifdef HAS_COMPLICATIONS
+static bool prv_text_rows_on(void) {
+  return settings.SubDialChoice == 0 && (settings.TextRow1 != TEXT_ROW_NONE || settings.TextRow2 != TEXT_ROW_NONE);
+}
+
+// Whether a top slot's item is drawn by the original code in its original place: the battery
+// value or current weather in the first slot, the forecast in the second
+static bool prv_top_slot_is_classic(int top, uint8_t kind) {
+  return top == 0 ? (kind == TEXT_ROW_BATTERY || kind == TEXT_ROW_WEATHER) : kind == TEXT_ROW_FORECAST;
+}
+
+// Whether any complication slot shows `kind` (the text rows only while they're on)
+static bool __attribute__((unused)) prv_slot_shows(uint8_t kind) {
+  return settings.TopSlot1 == kind || settings.TopSlot2 == kind ||
+         (prv_text_rows_on() && (settings.TextRow1 == kind || settings.TextRow2 == kind));
+}
+
+#endif
+
+static void prv_update_steps(void) {
+  #if defined(PBL_HEALTH)
+  bool row_steps = prv_slot_shows(TEXT_ROW_STEPS);
+  if (!prv_subdial_shows_steps() && !row_steps) {
+    return;
+  }
+  time_t start = time_start_of_today();
+  time_t now = time(NULL);
+  s_steps_today = (health_service_metric_accessible(HealthMetricStepCount, start, now) & HealthServiceAccessibilityMaskAvailable)
+                  ? (int32_t)health_service_sum_today(HealthMetricStepCount) : -1;
+  if (settings.SubDialChoice == SUBDIAL_STEPS_AVERAGE) {
+    time_t end = start + SECONDS_PER_DAY;
+    if (health_service_metric_averaged_accessible(HealthMetricStepCount, start, end, HealthServiceTimeScopeDaily)
+        & HealthServiceAccessibilityMaskAvailable) {
+      s_steps_avg_day = (int32_t)health_service_sum_averaged(HealthMetricStepCount, start, end, HealthServiceTimeScopeDaily);
+      s_steps_avg_now = (int32_t)health_service_sum_averaged(HealthMetricStepCount, start, now, HealthServiceTimeScopeDaily);
+    } else {
+      s_steps_avg_day = s_steps_avg_now = -1;
+    }
+  }
+  #endif
+}
+
+// The language for weekday and month names: the date language setting, or the watch's own
+static const char *prv_date_language(void) {
+  return strcmp(settings.DateLanguage, "auto") == 0 ? i18n_get_system_locale() : settings.DateLanguage;
+}
+
+// ISO week number: weeks start on Monday and week 1 is the one with the year's first Thursday
+static bool prv_is_leap(int year) { return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0; }
+static int prv_weeks_in_year(int year) {   // 53 if 1 January is a Thursday, or a Wednesday in a leap year
+  int y = year - 1;
+  int jan1 = (1 + 5 * (y % 4) + 4 * (y % 100) + 6 * (y % 400)) % 7;   // 0 = Sunday
+  return (jan1 == 4 || (jan1 == 3 && prv_is_leap(year))) ? 53 : 52;
+}
+static int prv_iso_week(const struct tm *t) {
+  int year = t->tm_year + 1900;
+  int wday = (t->tm_wday + 6) % 7;   // 0 = Monday
+  int week = (t->tm_yday - wday + 10) / 7;
+  if (week < 1) {
+    return prv_weeks_in_year(year - 1);
+  }
+  if (week > prv_weeks_in_year(year)) {
+    return 1;
+  }
+  return week;
+}
+
+// "Week" as each date language shortens it before a week number (no full stop where it's optional)
+static const char *prv_week_word(const char *lang) {
+  static const char *const words[][2] = {
+    { "es", "SEM" }, { "fr", "SEM" }, { "pt", "SEM" }, { "it", "SETT" }, { "de", "KW" },
+    { "sv", "V" }, { "da", "UGE" }, { "no", "UKE" }, { "nb", "UKE" }, { "fi", "VK" }, { "nl", "WK" },
+  };
+  for (size_t i = 0; i < ARRAY_LENGTH(words); i++) {
+    if (strncmp(lang, words[i][0], 2) == 0) { return words[i][1]; }
+  }
+  return "WK";   // English, and any other language
+}
+
+// The date in format `fmt` (DATE_FMT_*), weekday and month names in the date language
+static void prv_format_date(int fmt, char *out, size_t size) {
+  #ifdef BACKLIGHTON
+  snprintf(out, size, "WED 30");
+  return;
+  #endif
+  if (!prv_tick_time) { out[0] = 0; return; }
+  const char *lang = prv_date_language();
+  int day = prv_tick_time->tm_mday;
+  char weekday[5], month[10];
+  fetchwday(prv_tick_time->tm_wday, lang, weekday);
+  fetchmonth(prv_tick_time->tm_mon, lang, month);
+  switch (fmt) {
+    case DATE_FMT_MONTH_DAY: snprintf(out, size, "%s %d", month, day); break;
+    case DATE_FMT_DAY_MONTH: snprintf(out, size, "%d %s", day, month); break;
+    case DATE_FMT_DAY:       snprintf(out, size, "%d", day); break;
+    case DATE_FMT_DAY2:      snprintf(out, size, "%02d", day); break;
+    case DATE_FMT_WEEK:      snprintf(out, size, "%s %d", prv_week_word(lang), prv_iso_week(prv_tick_time)); break;
+    case DATE_FMT_WEEKDAY:   snprintf(out, size, "%s", weekday); break;
+    case DATE_FMT_MONTH:     snprintf(out, size, "%s", month); break;
+    default:                 snprintf(out, size, "%s %d", weekday, day); break;
+  }
+}
+
+#ifdef HAS_COMPLICATIONS
+// A time of day as the watch shows times: its 12/24-hour setting, "10:08" (or "10:08 PM" with
+// ShowAMPM)
+static void prv_format_clock(int hour, int minute, char *out, size_t size) {
+  if (clock_is_24h_style()) {
+    snprintf(out, size, settings.LeadingZero24 ? "%02d:%02d" : "%d:%02d", hour, minute);
+  } else {
+    const char *fmt = settings.LeadingZero12 ? (settings.ShowAMPM ? "%02d:%02d %s" : "%02d:%02d")
+                                             : (settings.ShowAMPM ? "%d:%02d %s" : "%d:%02d");
+    snprintf(out, size, fmt, hour % 12 ? hour % 12 : 12, minute, hour < 12 ? "AM" : "PM");
+  }
+}
+
+#ifndef PBL_PLATFORM_APLITE
+// A timezone row: "NYC 05:08" (label, if one is set, in capitals), or "--" while the offset is unknown
+static void prv_format_timezone(int32_t offset, const char *label, char *out, size_t size) {
+  if (offset == -1) { snprintf(out, size, "--"); return; }
+  time_t remote = g_current_epoch + offset;
+  struct tm *t = gmtime(&remote);
+  char clock[12], tag[4];
+  prv_format_clock(t->tm_hour, t->tm_min, clock, sizeof clock);
+  size_t n = 0;
+  for (; label[n] && n < sizeof tag - 1; n++) {
+    tag[n] = (label[n] >= 'a' && label[n] <= 'z') ? label[n] - 32 : label[n];
+  }
+  tag[n] = 0;
+  snprintf(out, size, n ? "%s %s" : "%s%s", tag, clock);
+}
+#endif
+
+// Removes the last character (UTF-8: with its continuation bytes) and any spaces it leaves at the end
+static void prv_cut_last_char(char *text) {
+  size_t n = strlen(text);
+  while (n > 0 && (text[n - 1] & 0xC0) == 0x80) { n--; }   // continuation bytes
+  if (n > 0) { n--; }
+  while (n > 0 && text[n - 1] == ' ') { n--; }
+  text[n] = 0;
+}
+
+// The second top row's width: between the rain alert icon (its widest glyph, about 1.1 em) and the
+// heat alert icon, either side of the centre, so its text is cut short rather than run into them
+static int prv_top2_max_width(GRect bounds) {
+  int centre = bounds.size.w / 2 + 1;
+  int left_room = centre - (config.RainIconRect[0].origin.x + WEATHER_ICON_PX * 11 / 10) - 3;
+  int right_room = config.WarningIconRect[0].origin.x - centre - 3;
+  return 2 * (left_room < right_room ? left_room : right_room);
+}
+
+// Copies `src` into `out` (`size` bytes, with the terminator) in capitals, as the fonts have no
+// lower case. Returns the length.
+static size_t prv_copy_capitals(const char *src, char *out, size_t size) {
+  size_t n = 0;
+  for (; src[n] && n < size - 1; n++) {
+    char c = src[n];
+    out[n] = (c >= 'a' && c <= 'z') ? c - 32 : c;
+  }
+  out[n] = 0;
+  return n;
+}
+
+// A text row's text (and icon, drawn before it, or NULL). False for an empty row.
+//  - Time: the watch's 12/24-hour setting; "10:08", or "10:08 PM" with ShowAMPM.
+//  - Steps: today's, with a thousands separator: "," for English, "." for the other languages
+//    (by the date language, as the date is), unless StepSeparator picks one. "--" until known.
+//  - Battery: "80%". Custom text: in capitals. Date: in the row's own format (date_fmt).
+//  - From the weather (empty while weather is off; "--" until it has arrived): sunrise / sunset
+//    (icon and time), UV ("UV 3 | 6"), precipitation ("30% | 1.2MM" or "30% | 0.05IN"),
+//    the current icon and temperature, today's high | low.
+//  - Timezones: "NYC 05:08".
+// Aplite offers time, battery, custom text and date only.
+// `slot` (SLOT_*) picks the custom text, time zone and date format.
+static bool prv_text_row_text(int slot, uint8_t row, char *out, size_t size, const char **icon) {
+  static const uint8_t *date_fmts[SLOT_COUNT] = { &settings.TopDate1, &settings.TopDate2,
+                                                  &settings.TextRowDate1, &settings.TextRowDate2 };
+  *icon = NULL;
+  switch (row) {
+    case TEXT_ROW_TIME:
+      if (!prv_tick_time) { return false; }
+      prv_format_clock(prv_tick_time->tm_hour, prv_tick_time->tm_min, out, size);
+      return true;
+    case TEXT_ROW_BATTERY:
+      snprintf(out, size, "%d", battery_state_service_peek().charge_percent);   // no "%", as the battery value always was
+      return true;
+    case TEXT_ROW_CUSTOM:
+      return prv_copy_capitals(s_slots.Text[slot], out, slot == SLOT_TOP2 ? SLOT_TOP2_TEXT_MAX + 1 : size) > 0;
+    case TEXT_ROW_APP_FIRST:
+    case TEXT_ROW_APP_FIRST + 1:
+    case TEXT_ROW_APP_FIRST + 2:
+    case TEXT_ROW_APP_FIRST + 3:
+    case TEXT_ROW_APP_LAST:
+      // "--" until the phone sends one (or while that position of the list is empty)
+      if (prv_copy_capitals(s_app_text[row - TEXT_ROW_APP_FIRST], out, size) == 0) {
+        snprintf(out, size, "--");
+      }
+      return true;
+    case TEXT_ROW_DATE:
+      prv_format_date(*date_fmts[slot], out, size);
+      return true;
+    #if defined(PBL_HEALTH)
+    case TEXT_ROW_STEPS: {
+      if (s_steps_today < 0) {
+        snprintf(out, size, "--");
+        return true;
+      }
+      char sep = settings.StepSeparator == 1 ? ',' : settings.StepSeparator == 2 ? '.' : 0;
+      if (settings.StepSeparator == 0) {
+        sep = strncmp(prv_date_language(), "en", 2) == 0 ? ',' : '.';
+      }
+      if (s_steps_today >= 1000 && sep) {
+        snprintf(out, size, "%d%c%03d", (int)(s_steps_today / 1000), sep, (int)(s_steps_today % 1000));
+      } else {
+        snprintf(out, size, "%d", (int)s_steps_today);
+      }
+      return true;
+    }
+    #endif
+    #ifndef PBL_PLATFORM_APLITE
+    case TEXT_ROW_TZ2:
+    case TEXT_ROW_TZ3:
+      if (slot == SLOT_TOP2) { return false; }   // too short for a time zone
+      prv_format_timezone(s_slots.Offset[slot], s_slots.Label[slot], out, size);
+      return true;
+    case TEXT_ROW_SUNRISE:
+    case TEXT_ROW_SUNSET:
+    case TEXT_ROW_SUN_NEXT: {
+      if (!settings.UseWeather) { return false; }
+      bool rise = row == TEXT_ROW_SUNRISE;
+      if (row == TEXT_ROW_SUN_NEXT) {   // sunrise until it's happened, then sunset, then tomorrow's sunrise
+        int now = prv_tick_time ? prv_tick_time->tm_hour * 60 + prv_tick_time->tm_min : 0;
+        rise = !(settings.SunriseMin >= 0 && now >= settings.SunriseMin && settings.SunsetMin >= 0 && now < settings.SunsetMin);
+      }
+      int minutes = rise ? settings.SunriseMin : settings.SunsetMin;
+      *icon = rise ? "\U0000F051" : "\U0000F052";
+      if (minutes < 0) {
+        snprintf(out, size, "--");
+      } else {
+        prv_format_clock(minutes / 60, minutes % 60, out, size);
+      }
+      return true;
+    }
+    case TEXT_ROW_UV:
+      if (!settings.UseWeather) { return false; }
+      if (settings.UVNow < 0) {
+        snprintf(out, size, "UV --");
+      } else if (settings.UVMax < 0) {
+        snprintf(out, size, "UV %d", settings.UVNow);
+      } else {
+        snprintf(out, size, "UV %d | %d", settings.UVNow, settings.UVMax);
+      }
+      return true;
+    case TEXT_ROW_PRECIP: {
+      if (!settings.UseWeather) { return false; }
+      if (settings.PrecipChance < 0 || settings.PrecipTenthMm < 0) {
+        snprintf(out, size, "--");
+        return true;
+      }
+      char amount[10];
+      if (settings.PrecipInches) {
+        int hundredths = (settings.PrecipTenthMm * 100 + 127) / 254;   // tenths of a mm -> hundredths of an inch
+        snprintf(amount, sizeof amount, "%d.%02dIN", hundredths / 100, hundredths % 100);
+      } else {
+        snprintf(amount, sizeof amount, "%d.%dMM", settings.PrecipTenthMm / 10, settings.PrecipTenthMm % 10);
+      }
+      snprintf(out, size, "%d%% | %s", settings.PrecipChance, amount);
+      return true;
+    }
+    #endif
+    case TEXT_ROW_PHONE_BATTERY:
+      // "--" until the phone sends it, and while it's away (the last level may be out of date)
+      if (s_phone_battery < 0 || !connection_service_peek_pebble_app_connection()) {
+        snprintf(out, size, "--");
+      } else {
+        snprintf(out, size, "%d", s_phone_battery);   // no "%", as the watch's battery
+      }
+      *icon = PHONE_ICON;
+      return true;
+    // the current weather and forecast: aplite too (its top slots offer them)
+    case TEXT_ROW_WEATHER: {
+      if (!settings.UseWeather) { return false; }
+      time_t stale_after = (time_t)(settings.UpSlider * 90);   // as the weather at the top
+      bool stale = s_last_weather_fetch == 0 || (g_current_epoch - s_last_weather_fetch) > stale_after;
+      *icon = s_weather_refreshing ? WEATHER_REFRESHING_ICON : stale ? WEATHER_STALE_ICON : settings.iconnowstring;
+      snprintf(out, size, "%s°", settings.tempstring);
+      return true;
+    }
+    case TEXT_ROW_FORECAST:
+      if (!settings.UseWeather) { return false; }
+      snprintf(out, size, "%s°", settings.temphistring);
+      return true;
+    default:
+      return false;
+  }
+}
+
+// The font a complication's icon is drawn in, its pixel size, and how far (in % of that size) its
+// box top sits above the text's cap middle
+static GFont prv_slot_icon_font(const char *icon, int *px, int *top_pct) {
+  *top_pct = TEXT_ROW_ICON_TOP_PCT;
+  if (strcmp(icon, PHONE_ICON) == 0) {
+    *px = PHONE_ICON_PX;
+    *top_pct = PHONE_ICON_TOP_PCT;
+    return FontPhoneIcon;
+  }
+  if (strcmp(icon, "\U0000F051") == 0 || strcmp(icon, "\U0000F052") == 0) {
+    *px = SUN_ICON_PX;
+    return FontSunIcons;
+  }
+  *px = WEATHER_ICON_PX;
+  return FontWeatherIcons;
+}
+
+#endif
+
 static void update_time_state(struct tm *tick_time) {
   minutes = tick_time->tm_min;
   hours = tick_time->tm_hour % 12;
   s_hours = tick_time->tm_hour;
   layer_mark_dirty(s_canvas_layer);
   layer_mark_dirty(s_date_battery_logo_layer);
-  if (settings.SubDialChoice == 4) {
-    layer_mark_dirty(s_canvas_month_hand);   // battery meter: pick up the latest charge every minute
+  prv_update_steps();
+  if (settings.SubDialChoice == 4 || prv_subdial_shows_steps()) {
+    layer_mark_dirty(s_canvas_month_hand);   // battery or steps meter: pick up the latest every minute
   }
   if ((settings.SubDialChoice == 3 || settings.SubDialChoice == 6) && tick_time->tm_mon != s_month) {
     s_month = tick_time->tm_mon;
@@ -1982,8 +2675,8 @@ static void draw_seconds_month_background(GContext *ctx) {
 
   
   
-  // 12 ticks (hours / months / seconds), or 10 for the battery meter (one every 10%)
-  int tick_count = (settings.SubDialChoice == 4) ? 10 : 12;
+  // 12 ticks (hours / months / seconds), or 10 for the battery and steps meters (one every 10%)
+  int tick_count = (settings.SubDialChoice == 4 || prv_subdial_shows_steps()) ? 10 : 12;
   for (int i = 0; i < tick_count; i++) {
         int angle = i * 360 / tick_count - 90;
         draw_seconds_tick(ctx, angle, config.majorticklength, PBL_IF_BW_ELSE(settings.BWMajorTickColor, settings.MajorTickColor));
@@ -2505,6 +3198,40 @@ static void get_digit_string(int i, bool roman, char *out, size_t out_size) {
 
 
 #ifdef PBL_PLATFORM_APLITE //DON'T use FCTX a second time on Aplite: also use on Diorite and Flint as fctx is less efficient
+#ifdef HAS_COMPLICATIONS
+// Aplite: a complication's icon (or none) and text in the 16px font, centred together in `box`
+// (the text box: its capitals' middle is 10 below the top). The icon is centred on the capitals
+// as on the other watches.
+// `max_w` (0 for none): the most the icon and text may take, the text cut short to fit
+static void prv_draw_slot_aplite(GContext *ctx, const char *full_text, const char *icon, GRect box, int max_w) {
+  char text[24];
+  snprintf(text, sizeof text, "%s", full_text);
+  int icon_px = 0, icon_top_pct = 0;
+  GFont icon_font = icon ? prv_slot_icon_font(icon, &icon_px, &icon_top_pct) : NULL;
+  GSize icon_size = icon ? graphics_text_layout_get_content_size(icon, icon_font, GRect(0, 0, 60, 40),
+                                                                 GTextOverflowModeFill, GTextAlignmentLeft) : GSize(0, 0);
+  int gap = icon ? 2 : 0;
+  GSize text_size = graphics_text_layout_get_content_size(text, FontBattery, GRect(0, 0, box.size.w, 20),
+                                                          GTextOverflowModeFill, GTextAlignmentLeft);
+  while (max_w > 0 && text[0] && icon_size.w + gap + text_size.w > max_w) {
+    prv_cut_last_char(text);
+    text_size = graphics_text_layout_get_content_size(text, FontBattery, GRect(0, 0, box.size.w, 20),
+                                                      GTextOverflowModeFill, GTextAlignmentLeft);
+  }
+  if (!icon) {
+    graphics_draw_text(ctx, text, FontBattery, box, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    return;
+  }
+  int left = box.origin.x + (box.size.w - icon_size.w - 2 - text_size.w) / 2;
+  int cap_middle = box.origin.y + 10;
+  graphics_draw_text(ctx, icon, icon_font, GRect(left, cap_middle - icon_px * icon_top_pct / 100, icon_size.w + 2, icon_size.h + 4),
+                     GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  graphics_draw_text(ctx, text, FontBattery, GRect(left + icon_size.w + 2, box.origin.y, text_size.w + 4, 20),
+                     GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+}
+
+#endif
+
 static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
   
@@ -2523,8 +3250,47 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   }
 
 
-  //draw battery value - unless the current weather is showing in its place (as on the other watches)
-  if(settings.EnableBattery && !(settings.UseWeather && settings.ShowCurrent)){
+  // The text rows (aplite: time, battery, custom text and date), in the 16px font: its capitals are 13
+  // tall and start 3 below the text box's top, so the box starts 10 above each row's middle
+#ifdef HAS_COMPLICATIONS
+  if (prv_text_rows_on()) {
+    uint8_t rows[2] = { settings.TextRow1, settings.TextRow2 };
+    graphics_context_set_text_color(ctx, settings.BWBottomColor);
+    for (int i = 0; i < 2; i++) {
+      char text[24];
+      const char *icon;
+      if (!prv_text_row_text(SLOT_ROW1 + i, rows[i], text, sizeof text, &icon)) {
+        continue;
+      }
+      int mid = config.seconds_circle_centre_y + (i ? 9 : -9);
+      prv_draw_slot_aplite(ctx, text, icon, GRect(0, mid - 10, bounds.size.w, 20), 0);
+    }
+  }
+
+  // The top slots' other items (the battery value is below; the current weather and forecast are
+  // drawn by the weather layer), in the 16px font: in the battery value's place, and the forecast's
+  {
+    uint8_t kinds[2] = { settings.TopSlot1, settings.TopSlot2 };
+    graphics_context_set_text_color(ctx, settings.BWBatteryWeatherColor);
+    for (int i = 0; i < 2; i++) {
+      char text[24];
+      const char *icon;
+      // the battery value and current weather in the first slot, and the forecast in the second,
+      // are drawn as they always were (battery layer / weather layer); anything else here
+      if (prv_top_slot_is_classic(i, kinds[i]) ||
+          !prv_text_row_text(SLOT_TOP1 + i, kinds[i], text, sizeof text, &icon)) {
+        continue;
+      }
+      GRect box = i ? GRect(1, config.BatteryYOffset + 20, bounds.size.w, 20)
+                    : GRect(0, config.BatteryYOffset + (settings.EnableBatteryLine ? 0 : 4), bounds.size.w, 20);
+      prv_draw_slot_aplite(ctx, text, icon, box, i ? prv_top2_max_width(bounds) : 0);
+    }
+  }
+
+#endif
+
+  //draw battery value
+  if (SHOW_TOP_BATTERY()) {
      //if(strcmp(settings.PosTop, "lo") == 0){
       int s_battery_level = battery_state_service_peek().charge_percent;
       char BatterytoDraw[6];
@@ -2556,46 +3322,9 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
           graphics_context_set_antialiased(ctx, true);
 
-            const char * sys_locale = i18n_get_system_locale();
-            const char * date_lang = (strcmp(settings.DateLanguage, "auto") == 0)
-                            ? sys_locale
-                            : settings.DateLanguage;
-
-            char weekday[5];
-            fetchwday(s_weekday, date_lang, weekday);
-
-            char weekdaydraw[10];
-            snprintf(weekdaydraw, sizeof(weekdaydraw), "%s", weekday);
-
-            char daynow[5];
-            snprintf(daynow, sizeof(daynow), "%d", current_date);
-
-            char monthnow[9];
-            fetchmonth(s_month, date_lang, monthnow);
-
             char datenow[15];
 
-               if(strcmp(settings.DateFormat, "0") == 0){  // 0 = DDD DD eg WED 30
-
-                snprintf(datenow, sizeof(datenow), "%s %d", weekday, current_date);
-
-              } else if (strcmp(settings.DateFormat, "1") == 0){ //1 = MMM D (AUG 30, JAN 9 etc)
-
-                snprintf(datenow, sizeof(datenow), "%s %d", monthnow, current_date);
-
-              } else if (strcmp(settings.DateFormat, "2") == 0){ //2 = DD MMM (30 AUG, 9 JAN etc)
-
-                snprintf(datenow, sizeof(datenow), "%d %s", current_date, monthnow);
-              
-              } else if (strcmp(settings.DateFormat, "3") == 0){ //3 = just the date eg 9, 30 etc
-
-                snprintf(datenow, sizeof(datenow), "%d", current_date);
-              
-              } else { //4 = just the date as two digits, eg 09, 30 etc
-
-                snprintf(datenow, sizeof(datenow), "%02d", current_date);
-              
-              }
+               prv_format_date(atoi(settings.DateFormat), datenow, sizeof(datenow));   // DATE_FMT_*
 
             GRect FullDateRect = 
                 GRect(0, yPosition + yOffset +yWeekdayDateOffset, bounds.size.w, WeekdayDateHeight);
@@ -2616,13 +3345,13 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
 
 #else   //use FCTX to antialise the digits better on all colour watches, still refers to B&W in case I change my mind later on non-APLITE watches
 
-// Starts an fctx drawing context. fctx's init allocates a scratch buffer the size of the whole
-// screen (on colour watches the same size as the frame buffer: ~24KB on basalt, ~26KB on chalk)
-// and doesn't check that it got one - if the heap is short, the first fill crashes the app
-// (fctx.c:468, "Tangent is not responding"). This checks. If the colour (anti-aliased) buffer
-// can't be had, it falls back to fctx's black & white mode, whose buffer is 1 bit per pixel
-// (~4KB) - the text is drawn without anti-aliasing for this one frame instead of crashing. If
-// even that fails, it returns false and the caller skips its text for this frame.
+// Starts an fctx drawing context. Its anti-aliasing buffer is a byte per pixel: the whole screen
+// (~24KB on basalt, ~32KB on chalk) where there's memory for it, which on basalt and chalk there
+// often isn't (less still with a background texture, itself a screen-sized bitmap), so (src/c/fctx,
+// changed from pebble-fctx for this) it then covers a band of rows and each fill is drawn band by
+// band (prv_fill_text). Only if even an 8-row band can't be had does it fall back to fctx's black &
+// white mode (1 bit per pixel, ~4KB): that frame's text is drawn without anti-aliasing instead of
+// crashing. If even that fails, it returns false and the caller skips its text for this frame.
 static bool prv_fctx_begin(FContext *fctx, GContext *ctx) {
   #ifdef PBL_COLOR
   fctx_enable_aa(true);
@@ -2647,6 +3376,75 @@ static bool prv_fctx_begin(FContext *fctx, GContext *ctx) {
   return true;
 }
 
+// One piece of text, in the fctx font at the em height already set, turned by `rot` about `offset`:
+// drawn in one go, or, where fctx only had memory for its anti-aliasing buffer to cover a band of the
+// screen (basalt and chalk, often), measured first and then drawn band by band down its height.
+// The same picture either way. (As Loupe's prv_fill.)
+static void prv_fill_text(FContext *fctx, const char *text, GTextAlignment align, FTextAnchor anchor,
+                          uint32_t rot, FPoint offset) {
+  fctx_set_rotation(fctx, rot);
+  fctx_set_offset(fctx, offset);
+  int band = fctx_band_rows(fctx), h = fctx->flag_bounds.size.h;
+  if (band >= h) {
+    fctx_begin_fill(fctx);
+    fctx_draw_string(fctx, text, FCTX_Font, align, anchor);
+    fctx_end_fill(fctx);
+    return;
+  }
+  fctx->band_y = 0;
+  fctx->measuring = true;   // its extent, without drawing
+  fctx_begin_fill(fctx);
+  fctx_draw_string(fctx, text, FCTX_Font, align, anchor);
+  fctx->measuring = false;
+  int top = FIXED_TO_INT(fctx->extent_min.y) - 1, bottom = FIXED_TO_INT(fctx->extent_max.y) + 1;
+  if (top < 0) { top = 0; }
+  if (bottom > h - 1) { bottom = h - 1; }
+  for (int y = top; y <= bottom; y += band) {
+    fctx->band_y = y;
+    fctx_begin_fill(fctx);
+    fctx_draw_string(fctx, text, FCTX_Font, align, anchor);
+    fctx_end_fill(fctx);
+  }
+  fctx->band_y = 0;
+}
+
+// A complication slot's icon (or none) and text, centred together on x with the text's capitals
+// middled on y. The icon is in the weather icon font: the sunrise/sunset icons sized to the text,
+// the current weather's as at the top.
+// `max_w` (0 for none): the most the icon and text may take, the text cut short to fit
+static void prv_draw_slot(GContext *ctx, FContext *fctx, const char *full_text, const char *icon, int x, int y,
+                          int em, GColor colour, int max_w) {
+  GTextAlignment align = GTextAlignmentCenter;
+  char text[24];
+  snprintf(text, sizeof text, "%s", full_text);
+  fctx_set_fill_color(fctx, colour);
+  fctx_set_text_em_height(fctx, FCTX_Font, em);
+  GSize icon_size = GSize(0, 0);
+  int icon_px = 0, icon_top_pct = 0;
+  GFont icon_font = NULL;
+  int gap = 0;
+  if (icon) {
+    icon_font = prv_slot_icon_font(icon, &icon_px, &icon_top_pct);
+    icon_size = graphics_text_layout_get_content_size(icon, icon_font, GRect(0, 0, 60, 40),
+                                                      GTextOverflowModeFill, GTextAlignmentLeft);
+    gap = em / 6;
+  }
+  int text_w = FIXED_TO_INT(fctx_string_width(fctx, text, FCTX_Font));
+  while (max_w > 0 && text[0] && icon_size.w + gap + text_w > max_w) {
+    prv_cut_last_char(text);
+    text_w = FIXED_TO_INT(fctx_string_width(fctx, text, FCTX_Font));
+  }
+  if (icon) {
+    int left = x - (icon_size.w + gap + text_w) / 2;
+    graphics_context_set_text_color(ctx, colour);
+    graphics_draw_text(ctx, icon, icon_font, GRect(left, y - icon_px * icon_top_pct / 100, icon_size.w + 2, icon_size.h + 4),
+                       GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+    x = left + icon_size.w + gap;
+    align = GTextAlignmentLeft;
+  }
+  prv_fill_text(fctx, text, align, FTextAnchorCapMiddle, 0, FPointI(x, y));
+}
+
 static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
   SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
   
@@ -2669,7 +3467,6 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
     if(!settings.EnableDate){
        for (int i = 1; i < 13; i++) {
         if (i % 2 == 0){
-          fctx_begin_fill(&fctx);
           fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
           fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
           char digit_string[6];
@@ -2693,10 +3490,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
           FPoint center_digits = FPointI(full_bounds.size.w / 2 + 1, full_bounds.size.h / 2);
           #endif
           FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
-          fctx_set_rotation(&fctx, digit_rotation);
-          fctx_set_offset(&fctx, p);
-          fctx_draw_string(&fctx, digit_string, FCTX_Font, GTextAlignmentCenter, FTextAnchorMiddle);
-          fctx_end_fill(&fctx);
+          prv_fill_text(&fctx, digit_string, GTextAlignmentCenter, FTextAnchorMiddle, digit_rotation, p);
       
         }
        }
@@ -2704,7 +3498,6 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
       else{
          for (int i = 1; i < 13; i++) {
         if (i % 2 == 0 && i != 6){
-          fctx_begin_fill(&fctx);
           fctx_set_text_em_height(&fctx, FCTX_Font, settings.Roman ? ((config.font_size_digits-config.romanadjust) * bounds.size.h/full_bounds.size.h) : config.font_size_digits* bounds.size.h/full_bounds.size.h);
           fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWHourDigitsColor, settings.HourDigitsColor));
           char digit_string[6];
@@ -2728,10 +3521,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
           FPoint center_digits = FPointI(full_bounds.size.w / 2 + 1, full_bounds.size.h / 2);
           #endif
           FPoint p = clockToCartesian(center_digits, text_radius, digit_angle_trig);
-          fctx_set_rotation(&fctx, digit_rotation);
-          fctx_set_offset(&fctx, p);
-          fctx_draw_string(&fctx, digit_string, FCTX_Font, GTextAlignmentCenter, FTextAnchorMiddle);
-          fctx_end_fill(&fctx);
+          prv_fill_text(&fctx, digit_string, GTextAlignmentCenter, FTextAnchorMiddle, digit_rotation, p);
       
         }
        }
@@ -2758,71 +3548,67 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
       fulldate_pos.x = INT_TO_FIXED(bounds.size.w/2);
       fulldate_pos.y = INT_TO_FIXED(bounds.size.h - config.DateBottomYPosition + yOffset + yOffsetFctx + yWeekdayDateOffset);
 
-    fctx_begin_fill(&fctx);
     fctx_set_text_em_height(&fctx, FCTX_Font, font_size_date);
-
-    const char * sys_locale = i18n_get_system_locale();
-    const char * date_lang = (strcmp(settings.DateLanguage, "auto") == 0)
-                            ? sys_locale
-                            : settings.DateLanguage;
-
-    char weekday[5];
-    fetchwday(s_weekday, date_lang, weekday);
-
-    char weekdaydraw[10];
-    snprintf(weekdaydraw, sizeof(weekdaydraw), "%s", weekday);
-
-    char monthnow[10];
-    fetchmonth(s_month, date_lang, monthnow);
-
-
-    fctx_begin_fill(&fctx);
-    fctx_set_text_em_height(&fctx, FCTX_Font, font_size_date);
-
-    char daynow[5];
-    snprintf(daynow, sizeof(daynow), "%d", current_date);
-
 
     char datenow[15];
  
-              if(strcmp(settings.DateFormat, "0") == 0){  // 0 = DDD DD eg WED 30
+              prv_format_date(atoi(settings.DateFormat), datenow, sizeof(datenow));   // DATE_FMT_*
 
-                snprintf(datenow, sizeof(datenow), "%s %d", weekday, current_date);
-
-              } else if (strcmp(settings.DateFormat, "1") == 0){ //1 = MMM DD (AUG 30)
-
-                snprintf(datenow, sizeof(datenow), "%s %d", monthnow, current_date);
-
-              } else if (strcmp(settings.DateFormat, "2") == 0){ //2 = DD MMM (30 AUG)
-
-                snprintf(datenow, sizeof(datenow), "%d %s", current_date, monthnow);
-              
-              } else if (strcmp(settings.DateFormat, "3") == 0){ //3 = just the date eg 9 or 30
-
-                snprintf(datenow, sizeof(datenow), "%d", current_date);
-              
-              } else { //4 = just the date as two digits eg 09 or 30
-
-                snprintf(datenow, sizeof(datenow), "%02d", current_date);
-              
-              }
-
-    fctx_set_offset(&fctx, fulldate_pos);
     #ifdef BACKLIGHTON
-    fctx_draw_string(&fctx, "WED 30", FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
+    prv_fill_text(&fctx, "WED 30", GTextAlignmentCenter, FTextAnchorTop, 0, fulldate_pos);
     #else
-    fctx_draw_string(&fctx, datenow, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
+    prv_fill_text(&fctx, datenow, GTextAlignmentCenter, FTextAnchorTop, 0, fulldate_pos);
     #endif
-    fctx_end_fill(&fctx);
 
 
+  }
+
+  // The two text rows, in the sub-dial's place (while it's off): centred on where its centre
+  // would be, three quarters of the date's size, in the date's colour. Hidden while Quick View
+  // squeezes a rectangular face, as the sub-dial is.
+  if (prv_text_rows_on() && grect_equal(&full_bounds, &bounds)) {
+    int row_em = config.font_size_date * TEXT_ROW_EM_PCT / 100;
+    int half_step = row_em * TEXT_ROW_CAP_PCT / 100 * (100 + TEXT_ROW_GAP_PCT) / 200;
+    uint8_t rows[2] = { settings.TextRow1, settings.TextRow2 };
+    GColor row_colour = PBL_IF_BW_ELSE(settings.BWBottomColor, settings.BottomColor);
+    for (int i = 0; i < 2; i++) {
+      char text[24];
+      const char *icon;
+      if (prv_text_row_text(SLOT_ROW1 + i, rows[i], text, sizeof text, &icon)) {
+        prv_draw_slot(ctx, &fctx, text, icon, config.seconds_circle_centre_x,
+                      config.seconds_circle_centre_y + (i ? half_step : -half_step), row_em, row_colour, 0);
+      }
+    }
+  }
+
+  // The top slots' other items (the battery value is below; the current weather and forecast are
+  // drawn by the weather layer): in the battery value's place at its size, and the forecast's
+  // place at its size. Hidden while Quick View squeezes a rectangular face, as the battery value is.
+  if (grect_equal(&full_bounds, &bounds)) {
+    uint8_t kinds[2] = { settings.TopSlot1, settings.TopSlot2 };
+    GColor top_colour = PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor);
+    for (int i = 0; i < 2; i++) {
+      char text[24];
+      const char *icon;
+      // the battery value and current weather in the first slot, and the forecast in the second,
+      // are drawn as they always were (battery layer / weather layer); anything else here
+      if (prv_top_slot_is_classic(i, kinds[i]) ||
+          !prv_text_row_text(SLOT_TOP1 + i, kinds[i], text, sizeof text, &icon)) {
+        continue;
+      }
+      int em = i ? config.font_size_battery + 2 : config.font_size_battery;
+      int top = i ? config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z + config.forecast_offset
+                  : config.BatteryYOffset + config.yOffsetFctx + (settings.EnableBatteryLine ? config.battery_pos_z : config.battery_pos_y);
+      prv_draw_slot(ctx, &fctx, text, icon, bounds.size.w / 2 + i, top + em * TOP_SLOT_CAP_MIDDLE_PCT / 100, em, top_colour,
+                    i ? prv_top2_max_width(bounds) : 0);
+    }
   }
 
 
   
     //draw battery value
   #ifdef HAS_WEATHER
-  if(settings.EnableBattery && grect_equal(&full_bounds, &bounds) && (!settings.UseWeather || (settings.UseWeather && !settings.ShowCurrent))){
+  if (SHOW_TOP_BATTERY() && grect_equal(&full_bounds, &bounds)) {
   
             fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
             FPoint battery_pos;
@@ -2830,7 +3616,6 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
             int font_size_battery = config.font_size_battery * bounds.size.h/full_bounds.size.h;
             
             int s_battery_level = battery_state_service_peek().charge_percent;
-            fctx_begin_fill(&fctx);
             fctx_set_text_em_height(&fctx, FCTX_Font, font_size_battery);
 
                 // Formats and draws the battery percentage text
@@ -2842,9 +3627,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
 
-                  fctx_set_offset(&fctx, battery_pos);
-                  fctx_draw_string(&fctx, BatterytoDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
-                  fctx_end_fill(&fctx);
+                  prv_fill_text(&fctx, BatterytoDraw, GTextAlignmentCenter, FTextAnchorTop, 0, battery_pos);
                 }
                 else { //shift the percentage text slightly when there's no battery line
 
@@ -2854,14 +3637,12 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
 
-                  fctx_set_offset(&fctx, battery_pos);
-                  fctx_draw_string(&fctx, BatterytoDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
-                  fctx_end_fill(&fctx);
+                  prv_fill_text(&fctx, BatterytoDraw, GTextAlignmentCenter, FTextAnchorTop, 0, battery_pos);
                 }
      
   }
   #else
-  if(settings.EnableBattery && grect_equal(&full_bounds, &bounds) ){
+  if (SHOW_TOP_BATTERY() && grect_equal(&full_bounds, &bounds)) {
   
             fctx_set_fill_color(&fctx, PBL_IF_BW_ELSE(settings.BWBatteryWeatherColor, settings.BatteryWeatherColor));
             FPoint battery_pos;
@@ -2869,7 +3650,6 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
             int font_size_battery = config.font_size_battery * bounds.size.h/full_bounds.size.h;
             
             int s_battery_level = battery_state_service_peek().charge_percent;
-            fctx_begin_fill(&fctx);
             fctx_set_text_em_height(&fctx, FCTX_Font, font_size_battery);
 
                 // Formats and draws the battery percentage text
@@ -2881,9 +3661,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
 
-                  fctx_set_offset(&fctx, battery_pos);
-                  fctx_draw_string(&fctx, BatterytoDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
-                  fctx_end_fill(&fctx);
+                  prv_fill_text(&fctx, BatterytoDraw, GTextAlignmentCenter, FTextAnchorTop, 0, battery_pos);
                 }
                 else { //shift the percentage text slightly when there's no battery line
 
@@ -2893,9 +3671,7 @@ static void update_logo_date_battery_fctx_layer (Layer *layer, GContext *ctx) {
                   char BatterytoDraw[6];
                   snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
 
-                  fctx_set_offset(&fctx, battery_pos);
-                  fctx_draw_string(&fctx, BatterytoDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
-                  fctx_end_fill(&fctx);
+                  prv_fill_text(&fctx, BatterytoDraw, GTextAlignmentCenter, FTextAnchorTop, 0, battery_pos);
                 }
      
   }
@@ -2969,10 +3745,44 @@ static void layer_update_proc_complication(Layer *layer, GContext *ctx) {
 }
 
 
+// Steps meter (sub-dial 7: today vs your target; 8: today vs your average day). The hand goes
+// round with today's steps, 12 o'clock being the target or your average whole day, and stops
+// at 12 once you pass it. On 8 a small marker on the rim shows your usual steps by this time of
+// day, so you can see if you're ahead or behind. Hand: sub-dial hand 1 (seconds) colour;
+// marker: the major tickmark colour (the preset themes give both sub-dial hands the same colour,
+// so a hand-2 marker would vanish into the hand). No hand while the step count isn't available.
+static void prv_draw_steps_subdial(GContext *ctx) {
+  draw_seconds_month_background(ctx);
+  GColor hand_colour = PBL_IF_BW_ELSE(settings.BWSecondsHandColor, settings.SecondsHandColor);
+  #if defined(PBL_HEALTH)
+  GPoint origin = GPoint(config.seconds_circle_centre_x, config.seconds_circle_centre_y);
+  int32_t full = settings.SubDialChoice == SUBDIAL_STEPS_TARGET ? (int32_t)settings.StepTarget * 1000 : s_steps_avg_day;
+  if (settings.SubDialChoice == SUBDIAL_STEPS_AVERAGE && full > 0 && s_steps_avg_now >= 0) {
+    int32_t pace = s_steps_avg_now < full ? s_steps_avg_now : full;
+    int marker_angle = (int)(pace * 360 / full) - 90;
+    int tip = config.second_hand_a - config.majorticklength - 1;
+    int rim = config.second_hand_a + 1;
+    GPoint pts[3] = { polar_to_point_offset(origin, marker_angle, tip),
+                      polar_to_point_offset(origin, marker_angle - STEPS_MARKER_HALF_DEG, rim),
+                      polar_to_point_offset(origin, marker_angle + STEPS_MARKER_HALF_DEG, rim) };
+    GPath marker = { .num_points = 3, .points = pts, .rotation = 0, .offset = GPointZero };
+    graphics_context_set_antialiased(ctx, true);
+    graphics_context_set_fill_color(ctx, PBL_IF_BW_ELSE(settings.BWMajorTickColor, settings.MajorTickColor));
+    gpath_draw_filled(ctx, &marker);
+  }
+  if (full > 0 && s_steps_today >= 0) {
+    int32_t steps = s_steps_today < full ? s_steps_today : full;
+    int angle = (int)(steps * 360 / full) - 90;
+    draw_month_hand(ctx, angle, config.second_hand_a, config.second_hand_b, hand_colour);
+  }
+  #endif
+  draw_seconds_center(ctx, PBL_IF_BW_ELSE(settings.BWBackgroundColor1, settings.BackgroundColor1), hand_colour);
+}
+
 static void layer_update_proc_month_hand(Layer *layer, GContext *ctx) {
   SKIP_ON_FAST_FRAME();   // only the hands change: the saved face already has this
 
-    if(settings.SubDialChoice != 3 && settings.SubDialChoice != 6 && settings.SubDialChoice != 4){
+    if(settings.SubDialChoice != 3 && settings.SubDialChoice != 6 && settings.SubDialChoice != 4 && !prv_subdial_shows_steps()){
     return;
       }
 
@@ -2980,6 +3790,10 @@ static void layer_update_proc_month_hand(Layer *layer, GContext *ctx) {
    GRect full_bounds = layer_get_bounds(layer);
 
     if (!grect_equal(&full_bounds, &bounds)) {
+      return;
+    }
+    if (prv_subdial_shows_steps()) {
+      prv_draw_steps_subdial(ctx);
       return;
     }
     if (settings.SubDialChoice == 4) {
@@ -3074,7 +3888,7 @@ static void layer_update_proc_battery_line(Layer *layer, GContext *ctx) {
   #endif
 
     // If neither element is enabled in config, stop.
-    if (!settings.EnableBattery && !settings.EnableBatteryLine) {
+    if (!settings.EnableBatteryLine) {
         return;
     }
 
@@ -3275,7 +4089,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
     bool weatherStale = (s_last_weather_fetch == 0) ||
         ((g_current_epoch - s_last_weather_fetch) > staleAfterSeconds);
 
-    if (settings.ShowCurrent) {
+    if (SHOW_TOP_WEATHER()) {
       char CondToDraw[4];
     snprintf(CondToDraw, sizeof(CondToDraw), "%s",
              s_weather_refreshing ? WEATHER_REFRESHING_ICON :
@@ -3317,14 +4131,14 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
     // aplite has no fctx: plain graphics_draw_text, with the Tangent fonts it already loads for the
     // date (18px) and battery (16px), in the same places as the fctx text on diorite/flint.
     graphics_context_set_text_color(ctx, settings.BWBatteryWeatherColor);
-    if (settings.ShowCurrent) {
-      char TempToDraw[6];
+    if (SHOW_TOP_WEATHER()) {
+      char TempToDraw[8];   // tempstring (up to 5) + "°" (2 bytes) + NUL
       snprintf(TempToDraw, sizeof(TempToDraw), "%s%s", settings.tempstring, "°");
       GRect TempRect = GRect(bounds.size.w / 2 + 2, config.BatteryYOffset + (settings.EnableBatteryLine ? -2 : 2),
                              bounds.size.w / 2 - 2, 24);
       graphics_draw_text(ctx, TempToDraw, FontDate, TempRect, GTextOverflowModeFill, GTextAlignmentLeft, NULL);
     }
-    if (settings.ShowForecast) {
+    if (SHOW_TOP_FORECAST()) {
       char TempForeToDraw[14];
       snprintf(TempForeToDraw, sizeof(TempForeToDraw), "%s%s", settings.temphistring, "°");
       GRect ForeRect = GRect(1, config.BatteryYOffset + 20, bounds.size.w, 20);
@@ -3342,43 +4156,37 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
             int font_size_temp = (config.font_size_battery) + config.weather_temp_grow * bounds.size.h/full_bounds.size.h;
             
             //int s_battery_level = battery_state_service_peek().charge_percent;
-            fctx_begin_fill(&fctx);
             fctx_set_text_em_height(&fctx, FCTX_Font, font_size_temp);
 
                 // Formats and draws the battery percentage text
-              if (settings.EnableBatteryLine && settings.ShowCurrent) {
+              if (settings.EnableBatteryLine && SHOW_TOP_WEATHER()) {
 
                   temp_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 2 ));
                   temp_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_z - 2 - 1)* bounds.size.h/full_bounds.size.h);
 
-                  char TempToDraw[6];
+                  char TempToDraw[8];   // tempstring (up to 5) + "°" (2 bytes) + NUL
                   //snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
                   snprintf(TempToDraw, sizeof(TempToDraw), "%s%s",settings.tempstring,"°");
 
 
-                  fctx_set_offset(&fctx, temp_pos);
-                  fctx_draw_string(&fctx, TempToDraw, FCTX_Font, GTextAlignmentLeft, FTextAnchorTop);
-                  fctx_end_fill(&fctx);
+                  prv_fill_text(&fctx, TempToDraw, GTextAlignmentLeft, FTextAnchorTop, 0, temp_pos);
                 }
-                else if(settings.ShowCurrent){ //shift the text slightly when there's no battery line
+                else if (SHOW_TOP_WEATHER()) { //shift the text slightly when there's no battery line
 
                   temp_pos.x = INT_TO_FIXED((bounds.size.w / 2 + 2));
                   temp_pos.y = INT_TO_FIXED((config.BatteryYOffset + config.yOffsetFctx + config.battery_pos_y - 2 - 1)* bounds.size.h/full_bounds.size.h);
 
-                  char TempToDraw[6];
+                  char TempToDraw[8];   // tempstring (up to 5) + "°" (2 bytes) + NUL
                   //snprintf(BatterytoDraw,sizeof(BatterytoDraw),"%d",s_battery_level);
                   snprintf(TempToDraw, sizeof(TempToDraw), "%s%s",settings.tempstring,"°");
 
-                  fctx_set_offset(&fctx, temp_pos);
-                  fctx_draw_string(&fctx, TempToDraw, FCTX_Font, GTextAlignmentLeft, FTextAnchorTop);
-                  fctx_end_fill(&fctx);
+                  prv_fill_text(&fctx, TempToDraw, GTextAlignmentLeft, FTextAnchorTop, 0, temp_pos);
                 }
                 
                 
-                if(settings.ShowForecast){
+                if (SHOW_TOP_FORECAST()) {
                   int font_size_fore = (config.font_size_battery) +2 * bounds.size.h/full_bounds.size.h;
 
-                fctx_begin_fill(&fctx);
                 fctx_set_text_em_height(&fctx, FCTX_Font, font_size_fore);
                 FPoint fore_pos;
                 
@@ -3389,9 +4197,7 @@ static void weather_update_proc(Layer *layer, GContext *ctx) {
                 char TempForeToDraw[14];
                 snprintf(TempForeToDraw, sizeof(TempForeToDraw), "%s%s",settings.temphistring,"°");
 
-                fctx_set_offset(&fctx, fore_pos);
-                fctx_draw_string(&fctx, TempForeToDraw, FCTX_Font, GTextAlignmentCenter, FTextAnchorTop);
-                fctx_end_fill(&fctx);
+                prv_fill_text(&fctx, TempForeToDraw, GTextAlignmentCenter, FTextAnchorTop, 0, fore_pos);
                 }
 
     fctx_deinit_context(&fctx);
@@ -3808,15 +4614,14 @@ static void prv_window_load(Window *window) {
   #endif
 
 
-  time_t temp = time(NULL);
-  g_current_epoch = temp;
-  prv_tick_time = localtime(&temp);
+  refresh_current_time();   // our own copy of the time (see refresh_current_time)
   current_date = prv_tick_time->tm_mday;
   s_weekday = prv_tick_time->tm_wday;
   minutes = prv_tick_time->tm_min;
   hours = prv_tick_time->tm_hour % 12;
   s_hours = prv_tick_time->tm_hour;
   s_month = prv_tick_time->tm_mon;
+  prv_update_steps();
 
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
@@ -3826,6 +4631,11 @@ static void prv_window_load(Window *window) {
     FCTX_Font =  ffont_create_from_resource(RESOURCE_ID_FONT_DATE_FCTX);
     #endif
     FontBTQTIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DRIPICONS_16));
+    #if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+    FontPhoneIcon = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_PHONEICON_16));
+    #elif defined(HAS_COMPLICATIONS)
+    FontPhoneIcon = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_PHONEICON_12));
+    #endif
     //non-fctx custom fonts for B&W screens
     #ifdef PBL_PLATFORM_APLITE
     FontDate = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DATE_20));
@@ -3837,8 +4647,14 @@ static void prv_window_load(Window *window) {
     // 20px icons on emery/gabbro's bigger screens, 16px everywhere else
     #if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
     FontWeatherIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WEATHERICONS_20));
+    FontSunIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SUNICONS_16));
     #else
     FontWeatherIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WEATHERICONS_16));
+    #ifndef PBL_PLATFORM_APLITE
+    FontSunIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SUNICONS_12));
+    #else
+    FontSunIcons = FontWeatherIcons;   // aplite has no sunrise/sunset rows
+    #endif
     #endif
     #endif
   // Subscribe to the connection service to get Bluetooth status updates.
@@ -3992,8 +4808,14 @@ static void prv_window_unload(Window *window) {
   fonts_unload_custom_font(FontHour);
   #endif
   fonts_unload_custom_font(FontBTQTIcons);
+  #ifdef HAS_COMPLICATIONS
+  fonts_unload_custom_font(FontPhoneIcon);
+  #endif
   #ifdef HAS_WEATHER
   fonts_unload_custom_font(FontWeatherIcons);
+  #ifndef PBL_PLATFORM_APLITE
+  fonts_unload_custom_font(FontSunIcons);
+  #endif
   #endif
   if (s_timeout_timer) {
   app_timer_cancel(s_timeout_timer);
@@ -4009,20 +4831,25 @@ static void prv_init(void) {
   #if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
   const uint32_t inbox_size = 2048;
   #elif defined(PBL_PLATFORM_APLITE)
-  // aplite has only 24KB for everything. The biggest message a B&W watch gets (53 keys - the
-  // phone strips the colour and phone-only ones) is ~590 bytes.
-  const uint32_t inbox_size = 768;
-  #else
-  // Everything else: the biggest message the phone sends (all settings + weather, with the
-  // phone-only keys like the API key and location stripped) is ~770 bytes, so 1KB is enough.
+  // aplite has only 24KB for everything. The biggest message it gets (the phone strips the
+  // colour, phone-only and complication keys: aplite has the original fixed layout) is ~600 bytes.
+  const uint32_t inbox_size = 640;
+  #elif defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK)
+  // The other colour watches get the colours too: the biggest message (all settings + weather,
+  // long custom texts and time zones in every slot) is ~1070 bytes.
   // Memory is tight here: on chalk every KB counts towards fctx's ~26KB text buffer.
+  const uint32_t inbox_size = 1280;
+  #else
+  // diorite/flint: the biggest message (no colours) is ~820 bytes, so 1KB is enough.
   const uint32_t inbox_size = 1024;
   #endif
   // Outbox: big enough for a timeline-log event (3 x int32); the weather ping is smaller.
   app_message_open(inbox_size, dict_calc_buffer_size(3, sizeof(int32_t)));
   app_message_register_inbox_received(prv_inbox_received_handler);
+  #ifdef HAS_TIMELINE_PINS
   app_message_register_outbox_sent(prv_outbox_sent_handler);
   app_message_register_outbox_failed(prv_outbox_failed_handler);
+  #endif
   prv_tether_init();
 
   s_window = window_create();

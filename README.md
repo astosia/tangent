@@ -41,3 +41,6 @@ GABBRO (Pebble Round 2)
 
 <img width="260" height="260" alt="gabbro_1 8" src="https://github.com/user-attachments/assets/39196a3a-6ccc-43d8-a337-4c4ed3705ce6" />
 
+## Building
+
+The text is drawn anti-aliased by fctx, kept in `src/c/fctx` (pebble-fctx 1.6.5, MIT licence) and changed so its anti-aliasing buffer can cover just a band of the screen when there isn't memory for all of it, as on basalt and chalk, where the full 24-32KB buffer often doesn't fit: each piece of text is then drawn band by band, with the same result. Before this, those watches fell back to drawing text without anti-aliasing (see `src/c/fctx/README.md`). The project depends on `pebble-utf8` (which fctx uses) rather than `pebble-fctx`, so run `npm install` before building.

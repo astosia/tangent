@@ -99,4 +99,48 @@ typedef struct ClaySettings {
   uint8_t SweepRate;
   // Phone disconnect/reconnect timeline pins (see "Phone-connection timeline log" in nomos.c)
   bool TimelinePins;
+  // Steps sub-dial (SubDialChoice 7) target, in thousands of steps (1-20)
+  uint8_t StepTarget;
+  // Text rows shown above the date while the sub-dial is off: TEXT_ROW_NONE / _TIME / _STEPS
+  uint8_t TextRow1;
+  uint8_t TextRow2;
+  bool ShowAMPM;          // the time row in 12-hour mode: "10:08 PM" rather than "10:08"
+  uint8_t StepSeparator;  // the steps row's thousands separator: 0 from the language, 1 ",", 2 ".", 3 none
+  // Unused: test builds kept the custom text and timezone labels here before each complication
+  // slot had its own (SlotData, below). Left in place so settings saved since keep their layout.
+  char ReservedText[12];
+  char ReservedLabel2[4];
+  char ReservedLabel3[4];
+  int32_t reserved_offset3;
+  uint8_t TextRowDate1;   // each row's date format, as DateFormat (DATE_FMT_*)
+  uint8_t TextRowDate2;
+  bool PrecipInches;      // the precipitation row in inches rather than mm
+  // From the weather (-1 = not known yet)
+  int16_t SunriseMin;     // minutes after midnight
+  int16_t SunsetMin;
+  int8_t UVNow;
+  int8_t UVMax;           // today's maximum
+  int8_t PrecipChance;    // % chance of precipitation in the next hour
+  int16_t PrecipTenthMm;  // the next hour's precipitation (rain and snow), tenths of a mm
+  // The two complication slots at the top (TEXT_ROW_* kinds): where the battery value / current
+  // weather and the forecast were. Before these, EnableBattery, ShowCurrent and ShowForecast
+  // chose those (see prv_load_settings).
+  uint8_t TopSlot1;
+  uint8_t TopSlot2;
+  uint8_t TopDate1;       // their date formats, as TextRowDate1/2
+  uint8_t TopDate2;
+  GColor BottomColor;     // the bottom complications (text rows); presets: as BatteryWeatherColor
+  GColor BWBottomColor;
+  bool LeadingZero12;     // "09:08" rather than "9:08" in 12-hour digital times
+  bool LeadingZero24;     // and in 24-hour ones
 } __attribute__((__packed__)) ClaySettings;
+
+// Each complication slot's own custom text and time zone (SLOT_TOP1, SLOT_TOP2, SLOT_ROW1,
+// SLOT_ROW2), kept under their own key: with them ClaySettings would pass the 256-byte limit.
+#define SLOT_DATA_KEY 153
+#define SLOT_COUNT 4
+typedef struct SlotData {
+  char Text[SLOT_COUNT][12];   // TEXT_ROW_CUSTOM, shown in capitals
+  char Label[SLOT_COUNT][4];   // TEXT_ROW_TZ2: a short label before the time, e.g. "NYC"
+  int32_t Offset[SLOT_COUNT];  // TEXT_ROW_TZ2: offset from UTC in seconds (-1 = unknown)
+} __attribute__((__packed__)) SlotData;
